@@ -1,0 +1,8 @@
+.youtrack-metadata-list {
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+.readonly {
+  background-color: #e9ecef;
+}

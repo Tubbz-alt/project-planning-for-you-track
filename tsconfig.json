@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    // We use ECMAScript 2017 language features such as async/await. We rely on Babel for transpiling to older
+    // JavaScript where necessary.
+    "target": "es2017",
+
+    // While the TypeScript compiler defaults to "module" = "es6" (given "target" = "es2017"), Parcel does not:
+    // https://github.com/parcel-bundler/parcel/blob/parcel-bundler%401.12.3/packages/core/parcel-bundler/src/assets/TypeScriptAsset.js#L19-L41
+    // We therefore specify module code generation explicitly.
+    // In fact, Parcel should probably use the TypeScript library to parse TypeScript config files, but it does not:
+    // https://github.com/parcel-bundler/parcel/blob/parcel-bundler%401.12.3/packages/core/parcel-bundler/src/assets/TypeScriptAsset.js#L33
+    // https://github.com/parcel-bundler/parcel/blob/parcel-bundler%401.12.3/packages/core/parcel-bundler/src/Asset.js#L145-L167
+    // https://github.com/parcel-bundler/parcel/blob/parcel-bundler%401.12.3/packages/core/parcel-bundler/src/utils/config.js#L34-L57
+    // https://github.com/parcel-bundler/parcel/blob/parcel-bundler%401.12.3/packages/core/parcel-bundler/src/utils/config.js#L6
+    "module": "es6",
+
+    // Enable all strict type-checking options.
+    "strict": true,
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "target/js",
+    "moduleResolution": "node",
+
+    // Allow to import CommonJS modules using the regular syntax (as opposed to "import = require('module')")
+    "esModuleInterop": true
+  },
+  "files": [
+    // From https://www.typescriptlang.org/docs/handbook/tsconfig-json.html:
+    // "Any files that are referenced by files included via the "files" or "include" properties are also included."
+    // It is therefore sufficient to list the main file here.
+
+    // For TypeDoc, any file explicitly listed here is "internal", all other files are "external". That terminology is
+    // somewhat confusing -- "internal" in the TypeDoc terminology refers to our own classes, "external" to third-party
+    // code. However, by listing only those files here that either (a) contain documentation or (b) contain no
+    // documentation but transitively include everything else, we can conveniently exclude documenting those pieces that
+    // are not meant to be exported (with option "excludeExternals").
+    "src/main/api-types.ts",
+    "src/main/index.ts",
+    "src/main/scheduling.ts",
+    "src/main/you-track-http.ts",
+    "src/main/you-track-project-planning.ts",
+    "src/main/you-track-oauth.ts"
+  ],
+  "typedocOptions": {
+    "excludePrivate": true,
+    "excludeExternals": true,
+    "excludeNotExported": true,
+    "mode": "file",
+    "out": "target/doc"
+  }
+}
