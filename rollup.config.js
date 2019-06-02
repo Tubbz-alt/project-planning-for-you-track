@@ -16,7 +16,7 @@ export default [
     output: {
       file: 'dist/index.js',
       format: 'umd',
-      name: 'YouTrackPlanningJs',
+      name: 'ProjectPlanningForYouTrack',
       sourcemap: true,
       sourcemapExcludeSources: true,
       globals: {
@@ -39,7 +39,7 @@ export default [
     output: {
       file: 'dist/index.min.js',
       format: 'umd',
-      name: 'ProjectPlanningForYoutrack',
+      name: 'ProjectPlanningForYouTrack',
       sourcemap: true,
       sourcemapExcludeSources: true,
       globals: {
