@@ -1,6 +1,6 @@
 {
   "name": "@fschopp/project-planning-for-you-track",
-  "version": "0.9.0-SNAPSHOT",
+  "version": "0.9.0",
   "description": "Project planning for YouTrack. Reconstruct past project schedule from YouTrack activity log, and compute future schedule from YouTrack issue data plus a list of available contributors.",
   "keywords": [
     "Gantt",
