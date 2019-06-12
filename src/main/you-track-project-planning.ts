@@ -645,7 +645,7 @@ class YouTrackIssueActivities {
       }
       if (unknownSubtasks.length > 0) {
         this.projectPlan_.warnings.push({
-          description: `Issue ${issue.id} is a parent for ${unknownDependencies.join(', ')}, which is/are not ` +
+          description: `Issue ${issue.id} is a parent for ${unknownSubtasks.join(', ')}, which is/are not ` +
               `contained in saved search “${this.savedQueryName_}”.`,
           issueId: issue.id,
         });

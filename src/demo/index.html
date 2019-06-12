@@ -17,7 +17,7 @@
         <input id="baseUrl" type="text" class="form-control" aria-describedby="baseUrlHelp"
                placeholder="Enter URL" />
         <small id="baseUrlHelp" class="form-text text-muted">
-          For an InCloud instance, this is of form <code>https://&lt;name&gt;.myjetbrains.com/</code>.
+          For YouTrack InCloud, this is of form <code>https://&lt;name&gt;.myjetbrains.com/</code>. For a YouTrack Standalone installation, this is the “Base URL” shown at Server Settings &gt; Global Settings.
         </small>
       </div>
     </div>
@@ -29,7 +29,7 @@
         <input id="serviceId" type="text" class="form-control" aria-describedby="serviceIdHelp"
                placeholder="Enter Service ID in Hub" />
         <small id="serviceIdHelp" class="form-text text-muted">
-          The YouTrack service ID is available via
+          The YouTrack service ID is shown at
           <a id="hubIntegrationLink" target="_blank">Server Settings &gt; Hub Integration</a>.
         </small>
       </div>
@@ -40,8 +40,7 @@
           Connect…
         </button>
         <small id="loginHelp" class="form-text text-muted">
-          If you are not logged into YouTrack yet, this will take you to the YouTrack login page. Once logged in,
-          you will be redirected back here. Please note: The URI of this web app (that is, “<span id="currentUri"></span>”) needs to be registered in the <a id="hubConfiguration" target="_blank">Hub Settings</a> under “Redirect URIs”. The URI also needs to be added to <a id="globalSettingsLink" target="_blank">Server Settings &gt; Global Settings</a> under “Allowed origins”.
+          If you are not logged into YouTrack yet, this will take you to the YouTrack login page. Once logged in, you will be redirected back here. Please note: The URI of this web app (that is, “<span id="currentUri"></span>”) needs to be registered in the <a id="hubConfiguration" target="_blank">Hub Settings</a> under “Redirect URIs”. The URI also needs to be added under “Allowed origins” at <a id="globalSettingsLink" target="_blank">Server Settings &gt; Global Settings</a>.
         </small>
       </div>
     </div>

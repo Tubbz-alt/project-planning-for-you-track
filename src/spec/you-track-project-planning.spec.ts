@@ -131,7 +131,7 @@ describe('reconstructProjectPlan() produces warnings', () => {
         issueId: 'XYZ-0',
       }, {
         description:
-            'Issue XYZ-0 is a parent for XYZ-2, which is/are not contained in saved search “Saved Search: Base”.',
+            'Issue XYZ-0 is a parent for XYZ-3, which is/are not contained in saved search “Saved Search: Base”.',
         issueId: 'XYZ-0',
       }],
     };
