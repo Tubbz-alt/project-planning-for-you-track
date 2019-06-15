@@ -125,7 +125,7 @@ class YouTrackIssueActivities {
   private readonly dependsOnDirection_: 'INWARD' | 'OUTWARD';
   private readonly issues_: InternalYouTrackIssue[] = [];
   private readonly idToIssueMap_ = new Map<string, InternalYouTrackIssue>();
-  private readonly idToActiveState_: {[id: string]: ActiveState} = {};
+  private readonly idToActiveState_: Map<string, ActiveState>;
   private readonly lowerCaseNameToActiveState_: {[lowerCaseName: string]: ActiveState} = {};
   private readonly projectPlan_: ProjectPlan;
 
@@ -148,6 +148,8 @@ class YouTrackIssueActivities {
     this.progressUpdateIntervalMs_ = progressUpdateIntervalMs;
     this.restBatchSize_ = restBatchSize;
     this.dependsOnDirection_ = this.config_.doesInwardDependOnOutward ? 'INWARD' : 'OUTWARD';
+    this.idToActiveState_ = youTrackConfig.inactiveStateIds
+        .reduce((map, inactiveState) => map.set(inactiveState, ActiveState.INACTIVE), new Map<string, ActiveState>());
     this.projectPlan_ = {
       issues: [],
       warnings: [],
@@ -235,14 +237,18 @@ class YouTrackIssueActivities {
       for (const restStateBundle of restStateBundles) {
         const isRelevantStateBundle = restStateBundle.id === stateBundleId;
         for (const restElement of restStateBundle.values) {
-          if (restElement.isResolved || this.config_.inactiveStateIds.includes(restElement.id)) {
-            this.idToActiveState_[restElement.id] = ActiveState.INACTIVE;
-          } else if (isRelevantStateBundle) {
-            this.idToActiveState_[restElement.id] = ActiveState.ACTIVE;
+          if (restElement.isResolved) {
+            this.idToActiveState_.set(restElement.id, ActiveState.INACTIVE);
+          } else if (isRelevantStateBundle && !this.config_.inactiveStateIds.includes(restElement.id)) {
+            this.idToActiveState_.set(restElement.id, ActiveState.ACTIVE);
           }
 
           if (isRelevantStateBundle) {
-            this.lowerCaseNameToActiveState_[restElement.name.toLowerCase()] = this.idToActiveState_[restElement.id];
+            // In this case, restElement.id was added to this.idToActiveState_: Either (a) in the constructor (if
+            // this.config_.inactiveStateIds.includes(restElement.id)) or (b) in one of the two if-branches above.
+            assert(this.idToActiveState_.has(restElement.id));
+            this.lowerCaseNameToActiveState_[restElement.name.toLowerCase()] =
+                this.idToActiveState_.get(restElement.id)!;
           }
         }
       }
@@ -407,8 +413,8 @@ class YouTrackIssueActivities {
 
     if (object.isResolved) {
       return ActiveState.INACTIVE;
-    } else if (object.id in this.idToActiveState_) {
-      return this.idToActiveState_[object.id];
+    } else if (this.idToActiveState_.has(object.id)) {
+      return this.idToActiveState_.get(object.id)!;
     }
 
     const lowerCaseName = object.name.toLowerCase();
