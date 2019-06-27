@@ -1,5 +1,5 @@
 import { strict as assert } from 'assert';
-import { Failure, ProgressCallback, ProjectPlan, YouTrackConfig, YouTrackIssue, } from './api-types';
+import { ProgressCallback, ProjectPlan, YouTrackConfig, YouTrackIssue, } from './api-types';
 import { OnlyOptionals } from './util';
 import { httpGet, httpGetAll, httpGetAllWithOptions } from './you-track-http';
 import * as RestApi from './you-track-rest';

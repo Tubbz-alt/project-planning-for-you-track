@@ -540,7 +540,7 @@ export default class YouTrackDatabase {
         } as DeepPartial<CustomField>, 200];
       case CUSTOM_FIELD_ID_REMAINING_EFFORT: case CUSTOM_FIELD_ID_REMAINING_WAIT: case CUSTOM_FIELD_ID_ASSIGNEE:
       case CUSTOM_FIELD_ID_TYPE:
-        throw Error('REST endpoint for getting custom field with id ${id} not implemented.');
+        throw Error(`REST endpoint for getting custom field with id ${id} not implemented.`);
       default: return [youTrackError('Not Found', `Entity with id ${id} not found`), 404];
     }
   }

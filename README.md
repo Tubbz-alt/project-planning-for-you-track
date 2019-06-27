@@ -4,6 +4,7 @@ Project planning for YouTrack. Reconstruct past project schedule from YouTrack a
 
 [![Build Status](https://travis-ci.org/fschopp/project-planning-for-you-track.svg?branch=master)](https://travis-ci.org/fschopp/project-planning-for-you-track)
 [![Coverage Status](https://coveralls.io/repos/github/fschopp/project-planning-for-you-track/badge.svg?branch=master)](https://coveralls.io/github/fschopp/project-planning-for-you-track?branch=master)
+[![Language grade: JavaScript](https://img.shields.io/lgtm/grade/javascript/g/fschopp/project-planning-for-you-track.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/fschopp/project-planning-for-you-track/context:javascript)
 [![npm](https://img.shields.io/npm/v/@fschopp/project-planning-for-you-track.svg)](https://www.npmjs.com/package/@fschopp/project-planning-for-you-track)
 
 ## Overview
