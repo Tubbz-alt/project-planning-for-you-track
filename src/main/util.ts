@@ -24,8 +24,8 @@ export type OnlyOptionals<T extends {}> = {[K in OptionalPropertyNames<T>]: Defi
  *
  * Note the differences to
  * [`Object.assign()`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/assign):
- * - Only String properties are copied.
- * - A property of the source value that has the value undefined is copied only if the property key is not yet in the
+ * - Only properties with `string` keys are copied.
+ * - A property of the source value that has the value `undefined` is copied only if the property key is not yet in the
  *   target. (The check is performed using the `in` operator.)
  *
  * @param target the target object
@@ -33,18 +33,20 @@ export type OnlyOptionals<T extends {}> = {[K in OptionalPropertyNames<T>]: Defi
  * @return the target object
  */
 export function assignDefined<T extends {[key: string]: any}, U extends {[key: string]: any}>(
-    target: T, source: U): T & U {
+    target: T, source: U | undefined): T & U {
   const typedTarget: T & U = target as T & U;
-  // Object.entries() returns “a given object's own enumerable string-keyed property [key, value] pairs,”
-  // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/entries
-  for (const [key, value] of Object.entries(source)) {
-    if (!(key in target) || value !== undefined) {
-      // Casting of key necessary for type soundness:
-      // https://github.com/microsoft/TypeScript/issues/31661#issuecomment-497474815
-      typedTarget[key as keyof U] = source[key];
+  if (source !== undefined) {
+    // Object.entries() returns “a given object's own enumerable string-keyed property [key, value] pairs,”
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/entries
+    for (const [key, value] of Object.entries(source)) {
+      if (!(key in target) || value !== undefined) {
+        // Casting of key necessary for type soundness:
+        // https://github.com/microsoft/TypeScript/issues/31661#issuecomment-497474815
+        typedTarget[key as keyof U] = source[key];
+      }
     }
   }
-  return target as T & U;
+  return typedTarget;
 }
 
 /**

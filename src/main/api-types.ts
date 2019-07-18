@@ -115,13 +115,53 @@ export interface ProjectPlanWarning {
 }
 
 /**
+ * Options for retrieving YouTrack issue data and building a project plan.
+ */
+export interface RetrieveProjectPlanOptions {
+  /**
+   * Callback for progress updates.
+   *
+   * By default, there is no callback.
+   */
+  progressCallback?: ProgressCallback;
+
+  /**
+   * Whether issue activities should be omitted, in which case {@link YouTrackIssue.issueActivities} will be the empty
+   * array for all issues.
+   *
+   * Retrieving past issue activities is the most time-consuming part of reconstructing a project plan. If the activity
+   * information is not required, this option should therefore be set to `true`.
+   *
+   * By default, this is `false`; that is, issue activities *are* retrieved.
+   */
+  omitIssueActivities?: boolean;
+
+  /**
+   * Interval (in milliseconds) in which progress updates will be provided to the callback.
+   *
+   * By default, this is 200 milliseconds.
+   */
+  progressUpdateIntervalMs?: number;
+
+  /**
+   * Number of elements per HTTP request to array resources. See also {@link httpGetAll}().
+   *
+   * By default, this is 100.
+   */
+  restBatchSize?: number;
+}
+
+/**
  * An issue with remaining effort or wait time.
  *
  * This interface contains all issue information relevant to its (future) scheduling.
  */
 export interface SchedulableIssue {
   /**
-   * Identifier of this issue.
+   * Identifier.
+   *
+   * This corresponds to property `idReadable` of YouTrack REST API entity
+   * [Issue](https://www.jetbrains.com/help/youtrack/standalone/api-entity-Issue.html).
    */
   id: string;
 
@@ -165,7 +205,8 @@ export interface SchedulableIssue {
   dependencies?: string[];
 
   /**
-   * Identifier of the assignee of this issue.
+   * YouTrack-internal ID of the current assignee (YouTrack REST API entity name
+   * [User](https://www.jetbrains.com/help/youtrack/standalone/api-entity-User.html)), or empty string if none.
    */
   assignee?: string;
 }
@@ -409,14 +450,6 @@ export interface YouTrackConfig {
  */
 export interface YouTrackIssue extends Required<SchedulableIssue> {
   /**
-   * Identifier.
-   *
-   * This corresponds to property `idReadable` of YouTrack REST API entity
-   * [Issue](https://www.jetbrains.com/help/youtrack/standalone/api-entity-Issue.html).
-   */
-  id: string;
-
-  /**
    * The issue summary (that is, title).
    */
   summary: string;
@@ -447,12 +480,6 @@ export interface YouTrackIssue extends Required<SchedulableIssue> {
    * empty string if the state field is not set.
    */
   state: string;
-
-  /**
-   * YouTrack-internal ID of the current assignee (YouTrack REST API entity name
-   * [User](https://www.jetbrains.com/help/youtrack/standalone/api-entity-User.html)), or empty string if none.
-   */
-  assignee: string;
 
   /**
    * Issue identifier (see {@link id}) of the parent issue, if any, or empty string if the issue has no parent.

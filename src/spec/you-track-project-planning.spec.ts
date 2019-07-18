@@ -2,7 +2,8 @@ import {
   getMinutesPerWorkWeek,
   ProgressCallback,
   ProjectPlan,
-  reconstructProjectPlan,
+  retrieveProjectPlan,
+  RetrieveProjectPlanOptions,
   YouTrackConfig,
   YouTrackIssue,
 } from '../main';
@@ -55,16 +56,15 @@ function issueDefaults(index: number) {
   };
 }
 
-function reconstructProjectPlanWithData(youTrackData: YouTrackData): Promise<ProjectPlan> {
+function retrieveProjectPlanWithData(youTrackData: YouTrackData): Promise<ProjectPlan> {
   const youTrackDatabase: YouTrackDatabase = new YouTrackDatabase(youTrackData);
   MockXmlHttpRequest.responseForRequest = (url: URL) => youTrackDatabase.responseForRequest(url);
-  return reconstructProjectPlan(YOUTRACK_BASE_URL, youTrackDatabase.youTrackConfig(),
-      () => { /* nothing */});
+  return retrieveProjectPlan(YOUTRACK_BASE_URL, youTrackDatabase.youTrackConfig());
 }
 
-describe('reconstructProjectPlan() handles edge cases', () => {
+describe('retrieveProjectPlan() handles edge cases', () => {
   test('no issues in saved search', async () => {
-    const projectPlan: ProjectPlan = await reconstructProjectPlanWithData({issues: []});
+    const projectPlan: ProjectPlan = await retrieveProjectPlanWithData({issues: []});
     const expected: ProjectPlan = {
       issues: [],
       warnings: [],
@@ -76,7 +76,7 @@ describe('reconstructProjectPlan() handles edge cases', () => {
     const youTrackData: YouTrackData = {
       issues: [{states: [[0, 'in progress'], [10, '*unknown']]}],
     };
-    const projectPlan: ProjectPlan = await reconstructProjectPlanWithData(youTrackData);
+    const projectPlan: ProjectPlan = await retrieveProjectPlanWithData(youTrackData);
     const expected: ProjectPlan = {
       issues: [{
         ...issueDefaults(0),
@@ -97,7 +97,7 @@ describe('reconstructProjectPlan() handles edge cases', () => {
       inactiveUnresolvedStates: ['open'],
       issues: [{states: [[0, 'open'], [1, 'in progress'], [2, 'done']]}],
     };
-    const projectPlan: ProjectPlan = await reconstructProjectPlanWithData(youTrackData);
+    const projectPlan: ProjectPlan = await retrieveProjectPlanWithData(youTrackData);
     const expected: ProjectPlan = {
       issues: [{
         ...issueDefaults(0),
@@ -111,12 +111,12 @@ describe('reconstructProjectPlan() handles edge cases', () => {
   });
 });
 
-describe('reconstructProjectPlan() produces warnings', () => {
+describe('retrieveProjectPlan() produces warnings', () => {
   test('missing parent, missing dependency, missing subissue', async () => {
     const youTrackData: YouTrackData = {
       issues: [{par: 1, dep: [2], unknownSubissues: [3], states: [[1, 'in progress']]}],
     };
-    const projectPlan: ProjectPlan = await reconstructProjectPlanWithData(youTrackData);
+    const projectPlan: ProjectPlan = await retrieveProjectPlanWithData(youTrackData);
     const expected: ProjectPlan = {
       issues: [{
         ...issueDefaults(0),
@@ -139,7 +139,7 @@ describe('reconstructProjectPlan() produces warnings', () => {
   });
 });
 
-describe('reconstructProjectPlan()', () => {
+describe('retrieveProjectPlan()', () => {
   const youTrackData: YouTrackData = {
     coalesceBelowMs: 3,
     inactiveUnresolvedStates: ['open'],
@@ -205,7 +205,7 @@ describe('reconstructProjectPlan()', () => {
   });
 
   async function runComputation(initialTime: number, configOverride?: Partial<YouTrackConfig>,
-      progressUpdateIntervalMs?: number, restBatchSize?: number): Promise<ProjectPlan> {
+      omitIssueActivities?: boolean, progressUpdateIntervalMs?: number, restBatchSize?: number): Promise<ProjectPlan> {
     let previousPercentageDone = -1;
     const progressCallback: ProgressCallback = (percentageDone) => {
       expect(percentageDone).toBeGreaterThanOrEqual(0);
@@ -215,10 +215,15 @@ describe('reconstructProjectPlan()', () => {
     };
 
     const youTrackConfig: YouTrackConfig = {...youTrackDatabase.youTrackConfig(), ...configOverride};
+    const options: RetrieveProjectPlanOptions = {
+      progressCallback,
+      omitIssueActivities,
+      progressUpdateIntervalMs,
+      restBatchSize,
+    };
     let currentTime = initialTime;
     Date.now = jest.fn().mockImplementation(() => currentTime++);
-    const projectPlan = await reconstructProjectPlan(YOUTRACK_BASE_URL, youTrackConfig, progressCallback,
-        progressUpdateIntervalMs, restBatchSize);
+    const projectPlan = await retrieveProjectPlan(YOUTRACK_BASE_URL, youTrackConfig, options);
     if (progressUpdateIntervalMs !== undefined) {
       if (progressUpdateIntervalMs > 100) {
         expect(previousPercentageDone).toBe(-1);
@@ -230,7 +235,7 @@ describe('reconstructProjectPlan()', () => {
   }
 
   test('works without no overlay saved search', async () => {
-    await expect(runComputation(14, {overlaySavedQueryId: ''}, 1, 2)).resolves.toEqual({
+    await expect(runComputation(14, {overlaySavedQueryId: ''}, false, 1, 2)).resolves.toEqual({
       issues: expectedYouTrackIssues,
       warnings: [],
     } as ProjectPlan);
@@ -254,6 +259,13 @@ describe('reconstructProjectPlan()', () => {
     youTrackDatabase.sideOfDependsOn = 'OUTWARD';
     await expect(runComputation(14, {overlaySavedQueryId: ''})).resolves.toEqual({
       issues: expectedYouTrackIssues,
+      warnings: [],
+    } as ProjectPlan);
+  });
+
+  test('omits issue activities if so requested', async () => {
+    await expect(runComputation(14, {overlaySavedQueryId: ''}, true, 1, 2)).resolves.toEqual({
+      issues: expectedYouTrackIssues.map((issue) => ({...issue, issueActivities: []})),
       warnings: [],
     } as ProjectPlan);
   });

@@ -1,10 +1,13 @@
 import * as ProjectPlanningJs from '@fschopp/project-planning-js';
 import {
-  Contributor, Failure,
-  IssueActivity, ProjectPlan,
+  Contributor,
+  Failure,
+  IssueActivity,
+  ProjectPlan,
   SchedulableIssue,
   Schedule,
-  SchedulingOptions, YouTrackIssue,
+  SchedulingOptions,
+  YouTrackIssue,
 } from './api-types';
 import { assignDefined, coalesce, deepClone, OnlyOptionals } from './util';
 

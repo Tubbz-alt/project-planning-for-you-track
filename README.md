@@ -1,4 +1,4 @@
-Project planning for YouTrack. Reconstruct past project schedule from YouTrack activity log, and compute future schedule from YouTrack issue data plus a list of available contributors.
+Library for project planning from YouTrack data. Retrieve past project schedule from activity log, and compute future schedule from unresolved issues and the available contributors.
 
 ## Status
 
@@ -31,7 +31,7 @@ Install with `npm install @fschopp/project-planning-for-you-track` or `yarn add 
 import {
   ProgressCallback,
   ProjectPlan,
-  reconstructProjectPlan,
+  retrieveProjectPlan,
   YouTrackConfig,
 } from '@fschopp/project-planning-for-you-track';
 const baseUrl: string = 'https://<name>.myjetbrains.com/';
@@ -43,7 +43,7 @@ const youTrackConfig: YouTrackConfig = {
   /* ... */
 };
 const promise: Promise<ProjectPlan> =
-    reconstructProjectPlan(baseUrl, youTrackConfig, progressUpdate);
+    retrieveProjectPlan(baseUrl, youTrackConfig, progressUpdate);
 ```
 
 ### Browser
@@ -56,7 +56,7 @@ Include the minified sources from the [jsDelivr CDN](https://www.jsdelivr.com/pa
 Of course, the two occurrences of `...` need to be replaced by the current version and its corresponding [subresource integrity (SRI)](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hash. Then, in a subsequent script:
 ```javascript
 /* baseUrl, youTrackConfig, and progressUpdate defined as above */
-const promise = ProjectPlanningForYouTrack.reconstructProjectPlan(
+const promise = ProjectPlanningForYouTrack.retrieveProjectPlan(
     baseUrl, youTrackConfig, progressUpdate);
 ```
 

@@ -1,7 +1,7 @@
 {
   "name": "@fschopp/project-planning-for-you-track",
-  "version": "0.9.2-SNAPSHOT",
-  "description": "Project planning for YouTrack. Reconstruct past project schedule from YouTrack activity log, and compute future schedule from YouTrack issue data plus a list of available contributors.",
+  "version": "0.9.2",
+  "description": "Library for project planning from YouTrack data. Retrieve past project schedule from activity log, and compute future schedule from unresolved issues and the available contributors.",
   "keywords": [
     "Gantt",
     "YouTrack",
@@ -49,20 +49,20 @@
     "@fschopp/project-planning-js": "^1.1.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.4.5",
-    "@babel/preset-env": "^7.4.5",
-    "@types/jest": "^24.0.13",
+    "@babel/core": "^7.5.5",
+    "@babel/preset-env": "^7.5.5",
+    "@types/jest": "^24.0.15",
     "babel-plugin-unassert": "^3.0.1",
     "jest": "^24.8.0",
     "parcel-bundler": "^1.12.3",
-    "rollup": "^1.13.1",
-    "rollup-plugin-babel": "^4.3.2",
+    "rollup": "^1.17.0",
+    "rollup-plugin-babel": "^4.3.3",
     "rollup-plugin-sourcemaps": "^0.4.2",
-    "rollup-plugin-terser": "^5.0.0",
+    "rollup-plugin-terser": "^5.1.1",
     "ts-jest": "^24.0.2",
-    "tslint": "^5.17.0",
+    "tslint": "^5.18.0",
     "typedoc": "^0.14.2",
-    "typescript": "^3.5.1"
+    "typescript": "^3.5.3"
   },
   "jest": {
     "collectCoverageFrom": [

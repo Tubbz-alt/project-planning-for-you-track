@@ -1,6 +1,6 @@
 import { strict as assert } from 'assert';
-import { ProgressCallback, ProjectPlan, YouTrackConfig, YouTrackIssue, } from './api-types';
-import { OnlyOptionals } from './util';
+import { ProjectPlan, RetrieveProjectPlanOptions, YouTrackConfig, YouTrackIssue, } from './api-types';
+import { assignDefined, OnlyOptionals } from './util';
 import { httpGet, httpGetAll, httpGetAllWithOptions } from './you-track-http';
 import * as RestApi from './you-track-rest';
 import { CustomFieldActivityItem } from './you-track-rest';
@@ -15,19 +15,17 @@ import { CustomFieldActivityItem } from './you-track-rest';
  * refresh tokens, so communication with YouTrack will fail otherwise.
  *
  * @param baseUrl The YouTrack base URL. See also {@link httpGet}().
- * @param youTrackConfig configuration of YouTrack
- * @param progressCallback callback for status and progress updates
- * @param progressUpdateIntervalMs interval (in milliseconds) in which progress updates will be provided to the callback
- * @param restBatchSize Number of elements per HTTP request to array resources. See also {@link httpGetAll}().
+ * @param youTrackConfig Configuration of YouTrack.
+ * @param options Options for retrieving YouTrack issue data and building a project plan.
  * @return A promise that in case of success will be fulfilled with a project plan. In case of any failure, it will be
  *     rejected with a {@link Failure}.
  */
-export function reconstructProjectPlan(baseUrl: string, youTrackConfig: YouTrackConfig,
-    progressCallback: ProgressCallback, progressUpdateIntervalMs: number = 200, restBatchSize: number = 100):
-    Promise<ProjectPlan> {
-  return new YouTrackIssueActivities(
-      baseUrl, youTrackConfig, progressCallback, progressUpdateIntervalMs, restBatchSize
-  ).promise;
+export function retrieveProjectPlan(
+    baseUrl: string, youTrackConfig: YouTrackConfig, options?: RetrieveProjectPlanOptions): Promise<ProjectPlan> {
+  const actualYouTrackConfig: Required<YouTrackConfig> = assignDefined(newDefaultYouTrackConfig(), youTrackConfig);
+  const actualOptions: Required<RetrieveProjectPlanOptions> =
+      assignDefined(newDefaultRequestProjectPlanOptions(), options);
+  return new YouTrackIssueActivities(baseUrl, actualYouTrackConfig, actualOptions).promise;
 }
 
 /**
@@ -46,18 +44,35 @@ export async function getMinutesPerWorkWeek(baseUrl: string): Promise<number> {
   return response.daysAWeek * response.minutesADay;
 }
 
-const YOUTRACK_CONFIG_DEFAULTS: OnlyOptionals<YouTrackConfig> = {
-  remainingEffortFieldId: '',
-  remainingWaitFieldId: '',
-  assigneeFieldId: '',
-  otherCustomFieldIds: [],
-  doesInwardDependOnOutward: true,
-  overlaySavedQueryId: '',
-  minStateChangeDurationMs: 0,
-  defaultRemainingEffortMs: 0,
-  defaultWaitTimeMs: 0,
-  isSplittableFn: () => false,
-};
+/**
+ * Returns a new object with values for the optional properties of {@link YouTrackConfig}.
+ */
+function newDefaultYouTrackConfig(): OnlyOptionals<YouTrackConfig> {
+  return {
+    remainingEffortFieldId: '',
+    remainingWaitFieldId: '',
+    assigneeFieldId: '',
+    otherCustomFieldIds: [],
+    doesInwardDependOnOutward: true,
+    overlaySavedQueryId: '',
+    minStateChangeDurationMs: 0,
+    defaultRemainingEffortMs: 0,
+    defaultWaitTimeMs: 0,
+    isSplittableFn: () => false,
+  };
+}
+
+/**
+ * Returns a new object with values for the optional properties of {@link RetrieveProjectPlanOptions}.
+ */
+function newDefaultRequestProjectPlanOptions(): OnlyOptionals<RetrieveProjectPlanOptions> {
+  return {
+    progressCallback: () => { /* no-op */ },
+    omitIssueActivities: false,
+    progressUpdateIntervalMs: 200,
+    restBatchSize: 100,
+  };
+}
 
 const YOUTRACK_CUSTOM_FIELDS_CATEGORY = 'CustomFieldCategory';
 
@@ -119,12 +134,16 @@ class YouTrackIssueActivities {
 
   private readonly baseUrl_: string;
   private readonly config_: Required<YouTrackConfig>;
-  private readonly progressCallback_: ProgressCallback;
-  private readonly progressUpdateIntervalMs_: number;
-  private readonly restBatchSize_: number;
+  private readonly options_: Required<RetrieveProjectPlanOptions>;
   private readonly dependsOnDirection_: 'INWARD' | 'OUTWARD';
   private readonly issues_: InternalYouTrackIssue[] = [];
   private readonly idToIssueMap_ = new Map<string, InternalYouTrackIssue>();
+  /**
+   * Map from id of the issue state (that is, the ID of the {@link StateBundleElement}) to whether that state is active.
+   *
+   * This property is only filled in {@link buildIdToActiveStateMap}() if
+   * {@link RetrieveProjectPlanOptions.omitIssueActivities} is false.
+   */
   private readonly idToActiveState_: Map<string, ActiveState>;
   private readonly lowerCaseNameToActiveState_: {[lowerCaseName: string]: ActiveState} = {};
   private readonly projectPlan_: ProjectPlan;
@@ -132,6 +151,12 @@ class YouTrackIssueActivities {
   private numIssues_: number = 0;
   private savedQueryName_: string = '';
   private numTasksWithDetails_: number = 0;
+  /**
+   * Timestamp of the first activity in the activity log.
+   *
+   * This property is only filled in {@link parseActivityItems}() if
+   * {@link RetrieveProjectPlanOptions.omitIssueActivities} is false.
+   */
   private minTimeStamp_: number = 0;
   private maxUpdateTimeStamp_: number = 0;
   private maxActivityTimeStamp_: number = 0;
@@ -140,13 +165,11 @@ class YouTrackIssueActivities {
   /**
    * Constructor that will already start the communication with the YouTrack server.
    */
-  constructor(baseUrl: string, youTrackConfig: YouTrackConfig, progressCallback: ProgressCallback,
-      progressUpdateIntervalMs: number, restBatchSize: number) {
+  constructor(
+      baseUrl: string, youTrackConfig: Required<YouTrackConfig>, options: Required<RetrieveProjectPlanOptions>) {
     this.baseUrl_ = baseUrl;
-    this.config_ = {...YOUTRACK_CONFIG_DEFAULTS, ...youTrackConfig};
-    this.progressCallback_ = progressCallback;
-    this.progressUpdateIntervalMs_ = progressUpdateIntervalMs;
-    this.restBatchSize_ = restBatchSize;
+    this.config_ = youTrackConfig;
+    this.options_ = options;
     this.dependsOnDirection_ = this.config_.doesInwardDependOnOutward ? 'INWARD' : 'OUTWARD';
     this.idToActiveState_ = youTrackConfig.inactiveStateIds
         .reduce((map, inactiveState) => map.set(inactiveState, ActiveState.INACTIVE), new Map<string, ActiveState>());
@@ -159,13 +182,17 @@ class YouTrackIssueActivities {
 
   private async run(): Promise<ProjectPlan> {
     await this.retrieveNumIssues();
-    const stateBundleId: string = await this.getStateBundleId();
     await this.retrieveSavedQueryName();
-    await this.buildIdToActiveStateMap(stateBundleId);
+    if (!this.options_.omitIssueActivities) {
+      const stateBundleId: string = await this.getStateBundleId();
+      await this.buildIdToActiveStateMap(stateBundleId);
+    }
     this.progressUpdate();
     await this.retrieveIssues();
     await this.retrieveOverlayOrder();
-    await this.retrieveActivities();
+    if (!this.options_.omitIssueActivities) {
+      await this.retrieveActivities();
+    }
     this.finalizeSchedule();
     return this.projectPlan_;
   }
@@ -175,7 +202,7 @@ class YouTrackIssueActivities {
    * worker.
    */
   private progressUpdate(): void {
-    if (Date.now() - this.lastProgressUpdate_ < this.progressUpdateIntervalMs_) {
+    if (Date.now() - this.lastProgressUpdate_ < this.options_.progressUpdateIntervalMs) {
       return;
     }
 
@@ -188,11 +215,13 @@ class YouTrackIssueActivities {
         percentageDone += 90 * Math.min(1,
           (this.maxActivityTimeStamp_ - this.minTimeStamp_) / (this.maxUpdateTimeStamp_ - this.minTimeStamp_)
         );
+      } else if (this.options_.omitIssueActivities) {
+        percentageDone *= 10;
       }
     }
 
     this.lastProgressUpdate_ = Date.now();
-    this.progressCallback_(percentageDone);
+    this.options_.progressCallback(percentageDone);
   }
 
   private newHttpRequest<T>(resourcePath: string, queryParams: {[param: string]: string}): Promise<T> {
@@ -201,7 +230,7 @@ class YouTrackIssueActivities {
 
   private getAll<T>(resourcePath: string, queryParams: {[param: string]: string},
         processBatch: (batch: T[]) => void): Promise<void> {
-    return httpGetAllWithOptions(this.baseUrl_, resourcePath, queryParams, this.restBatchSize_,
+    return httpGetAllWithOptions(this.baseUrl_, resourcePath, queryParams, this.options_.restBatchSize,
         processBatch, undefined);
   }
 
@@ -359,7 +388,7 @@ class YouTrackIssueActivities {
     const queryParams = {fields: YouTrackFields.OVERLAY_ORDER};
     type IdIssue = Pick<RestApi.Issue, 'id'>;
     const issues = await httpGetAll<IdIssue>(this.baseUrl_,
-        RestApi.youTrackPath.ISSUES(this.config_.overlaySavedQueryId), queryParams, this.restBatchSize_);
+        RestApi.youTrackPath.ISSUES(this.config_.overlaySavedQueryId), queryParams, this.options_.restBatchSize);
     const overlayIds = issues.map((issue) => issue.id).filter((id) => this.idToIssueMap_.has(id));
     const idToOverlayIdx = overlayIds.reduce((map, id, idx) => map.set(id, idx), new Map<string, number>());
 
@@ -380,7 +409,7 @@ class YouTrackIssueActivities {
       fields: YouTrackFields.ACTIVITIES_PAGE,
       categories: YOUTRACK_CUSTOM_FIELDS_CATEGORY,
       issueQuery: `saved search: {${this.savedQueryName_}}`,
-      $top: this.restBatchSize_.toString(),
+      $top: this.options_.restBatchSize.toString(),
     };
     let busy = true;
     let promise = this.newHttpRequest<RestApi.ActivityCursorPage>(RestApi.youTrackPath.ACTIVITIES_PAGE, queryParams);
@@ -568,46 +597,8 @@ class YouTrackIssueActivities {
 
   private finalizeSchedule(): void {
     for (const issue of this.issues_) {
-      // The following 3 issue properties have been set before in finishedIssues().
-      const newStateTransition: StateTransition = {
-        timestamp: issue.lastUpdate!,
-        activeState: issue.activeState,
-      };
-      this.addStateTransition(issue.stateTransitions, newStateTransition, issue.activeState);
-      // Using the definitions in addStateTransition(), we could at this point still have a[n - 1].s = U or
-      // a[n - 1].t - a[n - 2].t < c. We therefore add the following final transition for "clean up".
-      // Note that we err on the side of interpreting state UNKNOWN as ACTIVE.
-      const finalStateTransition: StateTransition = {
-        timestamp: Number.MAX_SAFE_INTEGER,
-        activeState: issue.activeState === ActiveState.UNKNOWN
-            ? ActiveState.ACTIVE
-            : issue.activeState,
-      };
-      this.addStateTransition(issue.stateTransitions, finalStateTransition, ActiveState.ACTIVE);
-      assert(
-          issue.stateTransitions
-              .filter((stateTransition) => stateTransition.activeState === ActiveState.UNKNOWN).length === 0,
-          'issue.stateTransitions should no longer contain elements with activeState === ActiveState.UNKNOWN'
-      );
-      assert(
-          issue.stateTransitions
-              .map((stateTransition) => stateTransition.timestamp)
-              .reduce(
-                  ([min, previousTimestamp], timestamp) => [Math.min(min, timestamp - previousTimestamp), timestamp],
-                  [Number.MAX_SAFE_INTEGER, -this.config_.minStateChangeDurationMs]
-              )[0] >= this.config_.minStateChangeDurationMs,
-          'issue.stateTransitions should no longer have consecutive elements within less than minStateChangeDurationMs'
-      );
-
-      const a = issue.stateTransitions;
-      const n = a.length;
-      for (let i = 0; i < n; i += 2) {
-        issue.issueActivities.push({
-          assignee: issue.assignee,
-          start: a[i].timestamp,
-          end: i < n - 1 ? a[i + 1].timestamp : Number.MAX_SAFE_INTEGER,
-          isWaiting: false,
-        });
+      if (!this.options_.omitIssueActivities) {
+        this.finalizeIssueActivities(issue);
       }
 
       let parent: string = '';
@@ -675,6 +666,50 @@ class YouTrackIssueActivities {
       };
       youTrackIssue.splittable = this.config_.isSplittableFn(youTrackIssue);
       this.projectPlan_.issues.push(youTrackIssue);
+    }
+  }
+
+  private finalizeIssueActivities(issue: InternalYouTrackIssue): void {
+    // The following 3 issue properties have been set before in finishedIssues().
+    const newStateTransition: StateTransition = {
+      timestamp: issue.lastUpdate!,
+      activeState: issue.activeState,
+    };
+    this.addStateTransition(issue.stateTransitions, newStateTransition, issue.activeState);
+    // Using the definitions in addStateTransition(), we could at this point still have a[n - 1].s = U or
+    // a[n - 1].t - a[n - 2].t < c. We therefore add the following final transition for "clean up".
+    // Note that we err on the side of interpreting state UNKNOWN as ACTIVE.
+    const finalStateTransition: StateTransition = {
+      timestamp: Number.MAX_SAFE_INTEGER,
+      activeState: issue.activeState === ActiveState.UNKNOWN
+          ? ActiveState.ACTIVE
+          : issue.activeState,
+    };
+    this.addStateTransition(issue.stateTransitions, finalStateTransition, ActiveState.ACTIVE);
+    assert(
+        issue.stateTransitions
+            .filter((stateTransition) => stateTransition.activeState === ActiveState.UNKNOWN).length === 0,
+        'issue.stateTransitions should no longer contain elements with activeState === ActiveState.UNKNOWN'
+    );
+    assert(
+        issue.stateTransitions
+            .map((stateTransition) => stateTransition.timestamp)
+            .reduce(
+                ([min, previousTimestamp], timestamp) => [Math.min(min, timestamp - previousTimestamp), timestamp],
+                [Number.MAX_SAFE_INTEGER, -this.config_.minStateChangeDurationMs]
+            )[0] >= this.config_.minStateChangeDurationMs,
+        'issue.stateTransitions should no longer have consecutive elements within less than minStateChangeDurationMs'
+    );
+
+    const a = issue.stateTransitions;
+    const n = a.length;
+    for (let i = 0; i < n; i += 2) {
+      issue.issueActivities.push({
+        assignee: issue.assignee,
+        start: a[i].timestamp,
+        end: i < n - 1 ? a[i + 1].timestamp : Number.MAX_SAFE_INTEGER,
+        isWaiting: false,
+      });
     }
   }
 }

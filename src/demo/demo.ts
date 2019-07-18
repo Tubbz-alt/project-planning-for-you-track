@@ -9,7 +9,7 @@ import {
   IssueActivity,
   ProgressCallback,
   ProjectPlan,
-  reconstructProjectPlan,
+  retrieveProjectPlan,
   Schedule,
   scheduleUnresolved,
   SchedulingOptions,
@@ -342,7 +342,7 @@ async function computePastProjectPlanAndPrediction(baseUrl: string, youTrackConf
       divProgressBar.setAttribute('aria-valuenow', rounded.toString());
       divProgressBar.style.width = `${rounded}%`;
     };
-    lastProjectPlan = await reconstructProjectPlan(baseUrl, youTrackConfig, progressUpdate);
+    lastProjectPlan = await retrieveProjectPlan(baseUrl, youTrackConfig, progressUpdate);
     btnFuture.disabled = false;
   } catch (exception) {
     if (isFailure(exception)) {
