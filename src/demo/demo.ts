@@ -337,12 +337,12 @@ async function computePrediction(schedulingOptions: SchedulingOptions): Promise<
 async function computePastProjectPlanAndPrediction(baseUrl: string, youTrackConfig: YouTrackConfig,
     schedulingOptions: SchedulingOptions): Promise<void> {
   try {
-    const progressUpdate: ProgressCallback = (percentageDone) => {
+    const progressCallback: ProgressCallback = (percentageDone) => {
       const rounded: number = Math.floor(percentageDone);
       divProgressBar.setAttribute('aria-valuenow', rounded.toString());
       divProgressBar.style.width = `${rounded}%`;
     };
-    lastProjectPlan = await retrieveProjectPlan(baseUrl, youTrackConfig, progressUpdate);
+    lastProjectPlan = await retrieveProjectPlan(baseUrl, youTrackConfig, {progressCallback});
     btnFuture.disabled = false;
   } catch (exception) {
     if (isFailure(exception)) {
@@ -488,7 +488,10 @@ window.onhashchange = loadFromHash;
 // Initialization
 onBaseUrlOrServiceIdChanged();
 spanCurrentUri.textContent = currentUri();
-window.addEventListener('DOMContentLoaded', () => {
+// Unfortunate workaround for Safari.
+// https://github.com/fschopp/project-planning-for-you-track/issues/1
+const DELAY_BEFORE_ACCESSING_SESSION_STORAGE_MS = 50;
+window.setTimeout(() => {
   const previousState: AppState | undefined = handlePotentialOauthRedirect<AppState>();
   if (previousState === undefined) {
     freshAppState();
@@ -496,4 +499,4 @@ window.addEventListener('DOMContentLoaded', () => {
     resumeFromAppState(previousState);
   }
   loadFromHash();
-});
+}, DELAY_BEFORE_ACCESSING_SESSION_STORAGE_MS);

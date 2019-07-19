@@ -98,9 +98,17 @@ export function goToOauthPage<T>(baseUrl: string, serviceId: string, appState: T
  *
  * This method is meant to be called when the page is loaded. If the current URL contains a hash that is the result of
  * an OAuth2 redirect, any URL component except domain and path (such as search query or hash) will be removed. Note
- * that `window.location.href` will be updated with `Location.replace()`.
+ * that `window.location` will be updated with `window.history.replaceState()`.
  *
- * Finally, this keeps a record of the YouTrack authorization, making it available via {@link authorizationFor}().
+ * The application state will be restored from session storage. Unfortunately, some browsers are known to have bugs that
+ * cause unexpected results if `sessionStorage` is accessed “too early,” relative to the page load in the browser. This
+ * applies at least to [Safari 12.1.1](https://github.com/fschopp/project-planning-for-you-track/issues/1) and older
+ * versions of [Firefox](https://stackoverflow.com/questions/13852209/localstorage-unreliable-in-firefox). (Recent
+ * versions of Chrome and Firefox appear to work just fine.) It is advisable to delay calling this method (for instance,
+ * with `setTimeout()`) when targeting browsers that are known to be problematic.
+ *
+ * Finally, this function keeps a record of the YouTrack authorization, making it available via
+ * {@link authorizationFor}().
  *
  * @typeparam T type of the application state
  * @return object containing the application state or undefined if the current location is not the result of a YouTrack
@@ -112,32 +120,6 @@ export function handlePotentialOauthRedirect<T>(): T | undefined {
   const oAuthId: string | null = fragmentParams.get('state');
   if (oAuthId !== null) {
     const key = storageKeyForOauthId(oAuthId);
-    // Unfortunately, localStorage and sessionStorage seem to be unreliable in some browsers. Safari 12.1.1 exhibits
-    // a similar behavior as described in the following StackOverflow post. Both localStorage and sessionStorage
-    // sometimes appear empty if this function is called "too soon" (and they remain empty while staying on the same
-    // page). Unlike hypothesized in the StackOverflow discussion, however, the issue in Safari still occurs when this
-    // function is called only after the DOM-ready event. The workaround mentioned on StackOverflow -- accessing
-    // sessionStorage.length -- does not help.
-    // https://stackoverflow.com/questions/13852209/localstorage-unreliable-in-firefox/13856156
-    // Interestingly, after a reload (in the same window/tab), Safari suddenly does show the expected key/value pairs
-    // (as expected in the first place -- since we previously created them in goToOauthPage()).
-    // Since Safari switches to a new process when goToOauthPage() sets window.location.href, it's possible that instead
-    // of the new process accessing sessionStorage "too soon", it is actually the previous process that persists
-    // sessionStorage "too late". Indeed, Safari writes sessionStorage updates to disk with a delay of up to 1 second:
-    // https://trac.webkit.org/browser/webkit/releases/Apple/Safari%2012.1.1/WebKit/UIProcess/WebStorage/LocalStorageDatabase.cpp#L235
-    // Other Relevant source code in WebKit:
-    // https://trac.webkit.org/browser/webkit/releases/Apple/Safari%2012.1.1/WebCore/storage
-    // https://trac.webkit.org/browser/webkit/releases/Apple/Safari%2012.1.1/WebKit/WebProcess/WebStorage
-    // The following FIXME in the WebKit code could be a contributor to the problem, too:
-    // https://trac.webkit.org/browser/webkit/releases/Apple/Safari%2012.1.1/WebKit/WebProcess/WebStorage/StorageAreaMap.cpp#L193
-    // Interestingly, the FIXME suggestion could be done easily, given this changeset:
-    // https://bugs.webkit.org/show_bug.cgi?id=182021
-    //
-    // Another StackOverflow post mentioning the above StackOverflow post (though no conclusive answer, either):
-    // https://stackoverflow.com/questions/30008981/is-localstorage-fully-loaded-only-after-dom-is-ready
-
-    // tslint:disable-next-line:no-unused-expression
-    sessionStorage.length;
     const storedValue: string | null = sessionStorage.getItem(key);
     if (storedValue !== null) {
       const baseUrlAndAppState: BaseUrlAndAppState<T> = JSON.parse(storedValue);
