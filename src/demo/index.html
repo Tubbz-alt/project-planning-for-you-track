@@ -14,10 +14,18 @@
     <div class="form-group row">
       <label for="baseUrl" class="col-form-label col-md-4 col-lg-3 text-md-right">YouTrack Base URL:</label>
       <div class="col-md-8 col-lg-9">
-        <input id="baseUrl" type="text" class="form-control" aria-describedby="baseUrlHelp"
-               placeholder="Enter URL" />
+        <input id="baseUrl" type="text" class="form-control" aria-describedby="baseUrlHelp" />
         <small id="baseUrlHelp" class="form-text text-muted">
-          For YouTrack InCloud, this is of form <code>https://&lt;name&gt;.myjetbrains.com/</code>. For a YouTrack Standalone installation, this is the “Base URL” shown at Server Settings &gt; Global Settings.
+          For YouTrack InCloud, enter the “Base URL” shown at Server Settings &gt; Domain Settings. The URL should be of form “https://&lt;your-domain&gt;/youtrack”. For YouTrack Standalone, enter the “Base URL” shown at Server Settings &gt; Global Settings.
+        </small>
+      </div>
+    </div>
+    <div class="form-group row">
+      <label for="hubUrl" class="col-form-label col-md-4 col-lg-3 text-md-right">Hub URL:</label>
+      <div class="col-md-8 col-lg-9">
+        <input id="hubUrl" type="text" class="form-control" aria-describedby="hubUrlHelp" />
+        <small id="hubUrlHelp" class="form-text text-muted">
+          For YouTrack InCloud without a custom domain, this setting is not configurable. Otherwise, enter the “Hub URL” shown at <a class="hubIntegrationLink" target="_blank">Server Settings &gt; Hub Integration</a>.
         </small>
       </div>
     </div>
@@ -26,11 +34,10 @@
         YouTrack Service ID in Hub:
       </label>
       <div class="col-md-8 col-lg-9">
-        <input id="serviceId" type="text" class="form-control" aria-describedby="serviceIdHelp"
-               placeholder="Enter Service ID in Hub" />
+        <input id="serviceId" type="text" class="form-control" aria-describedby="serviceIdHelp" />
         <small id="serviceIdHelp" class="form-text text-muted">
           The YouTrack service ID is shown at
-          <a id="hubIntegrationLink" target="_blank">Server Settings &gt; Hub Integration</a>.
+          <a class="hubIntegrationLink" target="_blank">Server Settings &gt; Hub Integration</a>.
         </small>
       </div>
     </div>
@@ -40,7 +47,7 @@
           Connect…
         </button>
         <small id="loginHelp" class="form-text text-muted">
-          If you are not logged into YouTrack yet, this will take you to the YouTrack login page. Once logged in, you will be redirected back here. Please note: The URI of this web app (that is, “<span id="currentUri"></span>”) needs to be registered in the <a id="hubConfiguration" target="_blank">Hub Settings</a> under “Redirect URIs”. The URI also needs to be added under “Allowed origins” at <a id="globalSettingsLink" target="_blank">Server Settings &gt; Global Settings</a>.
+          If you are not logged into YouTrack yet, this will take you to the YouTrack login page. Once logged in, you will be redirected back here. Please note: The URI of this web app (that is, “<span id="currentUri"></span>”) needs to be registered in the <a id="hubConfiguration" target="_blank">Hub Settings</a> under “Redirect URIs”. The current origin (that is, “<span id="currentOrigin"></span>”) also needs to be added under “Allowed origins” at <a id="globalSettingsLink" target="_blank">Server Settings &gt; Global Settings</a>.
         </small>
       </div>
     </div>

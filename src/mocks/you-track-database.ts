@@ -555,19 +555,19 @@ export default class YouTrackDatabase {
         queryDict.$top !== undefined ? startIndex + parseInt(queryDict.$top, 10) : Number.MAX_SAFE_INTEGER;
     let completeResponse: [any, number];
     switch (pathname) {
-      case '/youtrack/api/admin/customFieldSettings/bundles/state':
+      case '/api/admin/customFieldSettings/bundles/state':
         completeResponse = [this.stateBundles.slice(startIndex, endIndex()), 200];
         break;
-      case '/youtrack/api/admin/timeTrackingSettings/workTimeSettings':
+      case '/api/admin/timeTrackingSettings/workTimeSettings':
         completeResponse = [{
           minutesADay: 8 * 60,
           daysAWeek: 5,
         } as WorkTimeSettings, 200];
         break;
-      case '/youtrack/api/sortedIssues':
+      case '/api/sortedIssues':
         completeResponse = this.getSortedIssues(queryDict.folderId);
         break;
-      case '/youtrack/api/activitiesPage':
+      case '/api/activitiesPage':
         if (queryDict.cursor !== undefined) {
           const cursorMatch: RegExpMatchArray | null = queryDict.cursor.match(/start-at-([0-9]+)/);
           if (cursorMatch === null) {
@@ -588,19 +588,19 @@ export default class YouTrackDatabase {
         break;
       default:
         let pathMatch: RegExpMatchArray | null;
-        pathMatch = pathname.match(/^\/youtrack\/api\/savedQueries\/([a-z0-9\-]+)$/);
+        pathMatch = pathname.match(/^\/api\/savedQueries\/([a-z0-9\-]+)$/);
         if (pathMatch !== null) {
           completeResponse = this.getSavedQuery(pathMatch[1]);
           break;
         }
 
-        pathMatch = pathname.match(/^\/youtrack\/api\/savedQueries\/([a-z0-9\-]+)\/issues$/);
+        pathMatch = pathname.match(/^\/api\/savedQueries\/([a-z0-9\-]+)\/issues$/);
         if (pathMatch != null) {
           completeResponse = this.getSavedQueryIssues(pathMatch[1], startIndex, endIndex());
           break;
         }
 
-        pathMatch = pathname.match(/^\/youtrack\/api\/admin\/customFieldSettings\/customFields\/([a-z0-9\-]+)$/);
+        pathMatch = pathname.match(/^\/api\/admin\/customFieldSettings\/customFields\/([a-z0-9\-]+)$/);
         if (pathMatch != null) {
           completeResponse = YouTrackDatabase.getCustomField(pathMatch[1]);
           break;

@@ -1,3 +1,4 @@
+import { strict as assert } from 'assert';
 import {
   appendSchedule,
   Failure,
@@ -34,12 +35,6 @@ type AlertKind = 'success' | 'warning';
 const ALERT_KINDS: readonly AlertKind[] = Object.freeze(['success', 'warning']);
 
 
-// Global state (sigh)
-
-let hashFromShareLink: string = '';
-let lastProjectPlan: ProjectPlan | undefined;
-
-
 // HTML elements
 // Implied assumption here is this script is loaded after all of the following elements (the <script> element is at the
 // very end).
@@ -48,9 +43,12 @@ const feedback = document.getElementById('feedback') as HTMLDivElement;
 const feedbackTitle: HTMLElement = feedback.querySelector('strong')!;
 const feedbackMsg: HTMLElement = feedback.querySelector('span')!;
 const inpBaseUrl = document.getElementById('baseUrl')! as HTMLInputElement;
+const inpHubUrl = document.getElementById('hubUrl')! as HTMLInputElement;
 const inpServiceId = document.getElementById('serviceId')! as HTMLInputElement;
-const anchHubIntegrationLink = document.getElementById('hubIntegrationLink')! as HTMLAnchorElement;
+const anchHubIntegrationLinks =
+    document.getElementsByClassName('hubIntegrationLink') as HTMLCollectionOf<HTMLAnchorElement>;
 const spanCurrentUri = document.getElementById('currentUri')! as HTMLSpanElement;
+const spanCurrentOrigin = document.getElementById('currentOrigin')! as HTMLSpanElement;
 const anchHubConfiguration = document.getElementById('hubConfiguration')! as HTMLAnchorElement;
 const anchGlobalSettingsLink = document.getElementById('globalSettingsLink')! as HTMLAnchorElement;
 const btnConnect = document.getElementById('btnConnect')! as HTMLButtonElement;
@@ -67,23 +65,39 @@ const btnFuture = document.getElementById('btnFuture')! as HTMLButtonElement;
 const divProgressBar = document.getElementById('progressBar')! as HTMLDivElement;
 const preOutput = document.getElementById('output')! as HTMLPreElement;
 
+
+// Global state (sigh)
+
+let hashFromShareLink: string = '';
+let lastProjectPlan: ProjectPlan | undefined;
+let previousNormalizedBaseUrl: string = toNormalizedUrl(inpBaseUrl.value);
+
+
 interface AppState {
   baseUrl: string;
+  hubUrl: string;
   serviceId: string;
   youTrackInstance: string;
   schedulingOptions: string;
   isSplittableFn: string;
 }
 
-function verifiedBaseUrl(): string | undefined {
+function toNormalizedUrl(urlString: string): string {
   try {
-    const url = new URL(inpBaseUrl.value);
-    if (url.pathname.length === 0 || url.pathname.charAt(url.pathname.length - 1) !== '/') {
+    const url = new URL(urlString);
+    if (url.host.length === 0) {
+      // Oddly, Safari 12's implementation of the URL constructor does not throw on 'http:' or 'https:' whereas both
+      // Chrome and Firefox do.
+      return '';
+    } else if (url.pathname.length === 0 || url.pathname.charAt(url.pathname.length - 1) !== '/') {
       url.pathname = url.pathname.concat('/');
     }
     return url.toString();
   } catch (exception) {
-    return undefined;
+    if (!(exception instanceof TypeError)) {
+      throw exception;
+    }
+    return '';
   }
 }
 
@@ -118,27 +132,71 @@ function verifiedSchedulingOptions(): SchedulingOptions | undefined {
   }
 }
 
-function onBaseUrlOrServiceIdChanged() {
-  const actualBaseUrl: string | undefined = verifiedBaseUrl();
-  if (actualBaseUrl !== undefined) {
-    anchHubIntegrationLink.setAttribute('href', new URL('youtrack/admin/ring', actualBaseUrl).toString());
-    anchGlobalSettingsLink.setAttribute('href', new URL('youtrack/admin/settings', actualBaseUrl).toString());
+function hubUrlFromYouTrackBaseUrl(baseUrl: string): {hubUrl: string, isInCloudUrl: boolean} {
+  assert(baseUrl.length === 0 || baseUrl.endsWith('/'));
+
+  const inCloudMatch: RegExpMatchArray | null = baseUrl.match(/^(https:\/\/[^./]*\.myjetbrains\.com\/)youtrack\/$/);
+  let hubUrl: string;
+  let isInCloudUrl: boolean = false;
+  if (inCloudMatch !== null) {
+    // https://www.jetbrains.com/help/youtrack/incloud/OAuth-Authorization.html#HubOauthEndpoints
+    hubUrl = `${inCloudMatch[1]}hub`;
+    isInCloudUrl = true;
+  } else if (baseUrl.length > 0) {
+    // https://www.jetbrains.com/help/youtrack/standalone/OAuth-Authorization.html#HubOauthEndpoints
+    hubUrl = `${baseUrl}hub`;
   } else {
-    anchHubIntegrationLink.removeAttribute('href');
+    hubUrl = '';
+  }
+  return {hubUrl, isInCloudUrl};
+}
+
+function onBaseUrlChanged() {
+  const normalizedBaseUrl = toNormalizedUrl(inpBaseUrl.value);
+  const {hubUrl, isInCloudUrl} = hubUrlFromYouTrackBaseUrl(normalizedBaseUrl);
+  inpHubUrl.disabled = isInCloudUrl;
+
+  if (inpHubUrl.value === '' || isInCloudUrl ||
+      inpHubUrl.value === hubUrlFromYouTrackBaseUrl(previousNormalizedBaseUrl).hubUrl) {
+    // The hub URL is currently the default one for the base URL. Keep in sync.
+    // If the current if-condition is not true, the user has modified the hub URL, so it shouldn't be updates.
+    previousNormalizedBaseUrl = normalizedBaseUrl;
+    inpHubUrl.value = hubUrl;
+  }
+}
+
+function foreach<T extends Element>(collection: HTMLCollectionOf<T>, fn: (element: T) => void) {
+  const length = collection.length;
+  for (let i = 0; i < length; ++i) {
+    fn(collection.item(i)!);
+  }
+}
+
+function onYouTrackConnectionParametersChanged() {
+  const normalizedBaseUrl: string = toNormalizedUrl(inpBaseUrl.value);
+  if (normalizedBaseUrl.length > 0) {
+    foreach(anchHubIntegrationLinks,
+        (anchor) => anchor.setAttribute('href', new URL('admin/ring', normalizedBaseUrl).toString()));
+    anchGlobalSettingsLink.setAttribute('href', new URL('admin/settings', normalizedBaseUrl).toString());
+  } else {
+    foreach(anchHubIntegrationLinks, (anchor) => anchor.removeAttribute('href'));
     anchGlobalSettingsLink.removeAttribute('href');
   }
-  if (actualBaseUrl !== undefined && inpServiceId.value.length > 0) {
+  if (normalizedBaseUrl.length > 0 && inpServiceId.value.length > 0) {
     anchHubConfiguration.setAttribute('href',
-        new URL(`youtrack/admin/hub/services/${inpServiceId.value}?tab=settings`, actualBaseUrl).toString());
+        new URL(`admin/hub/services/${inpServiceId.value}?tab=settings`, normalizedBaseUrl).toString());
   } else {
     anchHubConfiguration.removeAttribute('href');
   }
-  btnConnect.disabled = actualBaseUrl === undefined || inpServiceId.value.length === 0;
+  const normalizedHubUrl: string = toNormalizedUrl(inpHubUrl.value);
+  btnConnect.disabled = normalizedBaseUrl.length === 0 || normalizedHubUrl.length === 0 ||
+      inpServiceId.value.length === 0;
 }
 
 function getAppState(): AppState {
   return {
     baseUrl: inpBaseUrl.value,
+    hubUrl: inpHubUrl.value,
     serviceId: inpServiceId.value,
     youTrackInstance: textYouTrackConfig.value,
     schedulingOptions: textSchedulingOptions.value,
@@ -147,8 +205,9 @@ function getAppState(): AppState {
 }
 
 function connect() {
-  // The button is only enabled if verifiedBaseUrl() returns a string.
-  goToOauthPage<AppState>(verifiedBaseUrl()!, inpServiceId.value, getAppState());
+  // The button is only enabled if toNormalizedUrl(inpHubUrl.value).length > 0 returns a string.
+  goToOauthPage<AppState>(toNormalizedUrl(inpBaseUrl.value), toNormalizedUrl(inpHubUrl.value), inpServiceId.value,
+      getAppState());
 }
 
 async function loadFromYouTrack<T>(baseUrl: string, relativePath: string, fields: string): Promise<T[]> {
@@ -210,13 +269,19 @@ function onReceivedYouTrackMetadata(baseUrl: string, customFields: CustomField[]
   spanMinutesPerWorkWeek.textContent = minutesPerWorkWeek.toString();
 }
 
-function currentUri(): string {
+function currentUri(): URL {
   const uri = new URL(window.location.href);
   uri.hash = '';
   uri.username = '';
   uri.password = '';
   uri.search = '';
-  return uri.toString();
+  return uri;
+}
+
+function currentOrigin(): URL {
+  const uri = currentUri();
+  uri.pathname = '';
+  return uri;
 }
 
 function showAlert(title: string, message: string, alertKind: 'success' | 'warning'): void {
@@ -256,8 +321,11 @@ function shareLink(): void {
 
 function loadAppState(appState: AppState): void {
   inpBaseUrl.value = appState.baseUrl;
+  inpHubUrl.value = appState.hubUrl;
   inpServiceId.value = appState.serviceId;
-  onBaseUrlOrServiceIdChanged();
+  previousNormalizedBaseUrl = toNormalizedUrl(appState.baseUrl);
+  onBaseUrlChanged();
+  onYouTrackConnectionParametersChanged();
 
   textYouTrackConfig.value = appState.youTrackInstance;
   textSchedulingOptions.value = appState.schedulingOptions;
@@ -358,10 +426,10 @@ async function computePastProjectPlanAndPrediction(baseUrl: string, youTrackConf
 }
 
 function scheduleFromActivityLog(): void {
-  const baseUrl: string | undefined = verifiedBaseUrl();
+  const baseUrl: string = toNormalizedUrl(inpBaseUrl.value);
   const youTrackConfig: YouTrackConfig | undefined = verifiedYouTrackConfig();
   const schedulingOptions: SchedulingOptions | undefined = verifiedSchedulingOptions();
-  if (baseUrl === undefined || youTrackConfig === undefined || schedulingOptions === undefined) {
+  if (baseUrl.length === 0 || youTrackConfig === undefined || schedulingOptions === undefined) {
     return;
   }
 
@@ -418,6 +486,7 @@ function freshAppState() {
   };
   const appState: AppState = {
     baseUrl: '',
+    hubUrl: '',
     serviceId: '',
     youTrackInstance: JSON.stringify(youTrackInstance, undefined, 2),
     schedulingOptions: JSON.stringify(schedulingOptions, undefined, 2),
@@ -429,27 +498,27 @@ function freshAppState() {
 function resumeFromAppState(appState: AppState) {
   loadAppState(appState);
   // Not bullet-proof, but enough for this demo. We should only get here if the base URL is valid.
-  const actualBaseUrl: string = verifiedBaseUrl()!;
+  const actualBaseUrl: string = toNormalizedUrl(inpBaseUrl.value);
   Promise
       .all([
         loadFromYouTrack<CustomField>(
             actualBaseUrl,
-            'youtrack/api/admin/customFieldSettings/customFields',
+            'api/admin/customFieldSettings/customFields',
             'fieldDefaults(bundle(id,values(id,name,isResolved,ordinal))),fieldType(id),id,name'
         ),
         loadFromYouTrack<SavedQuery>(
             actualBaseUrl,
-            'youtrack/api/savedQueries',
+            'api/savedQueries',
             'id,name,owner(fullName)'
         ),
         loadFromYouTrack<IssueLinkType>(
             actualBaseUrl,
-            'youtrack/api/issueLinkTypes',
+            'api/issueLinkTypes',
             'directed,id,name,sourceToTarget,targetToSource'
         ),
         loadFromYouTrack<User>(
             actualBaseUrl,
-            'youtrack/api/admin/users',
+            'api/admin/users',
             'avatarUrl,id,fullName'
         ),
         getMinutesPerWorkWeek(actualBaseUrl),
@@ -467,8 +536,10 @@ function resumeFromAppState(appState: AppState) {
 
 // Set up events
 
-inpBaseUrl.addEventListener('input', onBaseUrlOrServiceIdChanged);
-inpServiceId.addEventListener('input', onBaseUrlOrServiceIdChanged);
+inpBaseUrl.addEventListener('input', onBaseUrlChanged);
+inpBaseUrl.addEventListener('input', onYouTrackConnectionParametersChanged);
+inpHubUrl.addEventListener('input', onYouTrackConnectionParametersChanged);
+inpServiceId.addEventListener('input', onYouTrackConnectionParametersChanged);
 btnConnect.onclick = connect;
 btnPast.onclick = scheduleFromActivityLog;
 btnFuture.onclick = predict;
@@ -486,8 +557,8 @@ window.onhashchange = loadFromHash;
 
 
 // Initialization
-onBaseUrlOrServiceIdChanged();
-spanCurrentUri.textContent = currentUri();
+spanCurrentUri.textContent = currentUri().toString();
+spanCurrentOrigin.textContent = currentOrigin().toString();
 // Unfortunate workaround for Safari.
 // https://github.com/fschopp/project-planning-for-you-track/issues/1
 const DELAY_BEFORE_ACCESSING_SESSION_STORAGE_MS = 50;

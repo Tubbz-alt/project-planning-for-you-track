@@ -1,6 +1,6 @@
 import { authorizationFor, goToOauthPage, handlePotentialOauthRedirect } from '../main';
 import MockLocation from '../mocks/mock-window-location';
-import MockYouTrackOauth, { YOUTRACK_BASE_URL } from '../mocks/mock-you-track-oauth';
+import MockYouTrackOauth, { HUB_URL, YOUTRACK_BASE_URL } from '../mocks/mock-you-track-oauth';
 
 describe('handlePotentialOauthRedirect()', () => {
   const mockLocation: MockLocation = new MockLocation();
@@ -26,7 +26,7 @@ describe('handlePotentialOauthRedirect()', () => {
   test('ignores OAuth redirect if parameters are missing', () => {
     window.location.href = 'http://localhost/fancy-web-app/';
     const appStateBeforeOauth = 'appState';
-    goToOauthPage(YOUTRACK_BASE_URL, 'service-id', appStateBeforeOauth);
+    goToOauthPage(YOUTRACK_BASE_URL, HUB_URL, 'service-id', appStateBeforeOauth);
     const oAuthUrl = new URL(mockLocation.pastHrefChanges[mockLocation.pastHrefChanges.length - 1]);
     const stateParam: string = oAuthUrl.searchParams.get('state')!;
     window.location.href = `http://localhost/fancy-web-app/#state=${stateParam}&access_token=access-token`;

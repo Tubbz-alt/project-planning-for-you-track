@@ -1,19 +1,27 @@
 /**
  * Types defined by the [YouTrack REST API](https://www.jetbrains.com/help/youtrack/standalone/api-entities.html).
+ *
+ * Not part of the public API of this project.
  */
 
 /**
  * YouTrack REST API paths.
  */
 export const youTrackPath = Object.freeze({
-  ACTIVITIES_PAGE: 'youtrack/api/activitiesPage',
-  CUSTOM_FIELD: (customFieldId: string) => `youtrack/api/admin/customFieldSettings/customFields/${customFieldId}`,
-  ISSUES: (queryId: string) => `youtrack/api/savedQueries/${queryId}/issues`,
-  OAUTH: 'hub/api/rest/oauth2/auth',
-  SAVED_QUERY: (queryId: string) => `youtrack/api/savedQueries/${queryId}`,
-  SORTED_ISSUES: 'youtrack/api/sortedIssues',
-  STATE_BUNDLES: 'youtrack/api/admin/customFieldSettings/bundles/state',
-  WORK_TIME_SETTINGS: 'youtrack/api/admin/timeTrackingSettings/workTimeSettings',
+  ACTIVITIES_PAGE: 'api/activitiesPage',
+  CUSTOM_FIELD: (customFieldId: string) => `api/admin/customFieldSettings/customFields/${customFieldId}`,
+  ISSUES: (queryId: string) => `api/savedQueries/${queryId}/issues`,
+  SAVED_QUERY: (queryId: string) => `api/savedQueries/${queryId}`,
+  SORTED_ISSUES: 'api/sortedIssues',
+  STATE_BUNDLES: 'api/admin/customFieldSettings/bundles/state',
+  WORK_TIME_SETTINGS: 'api/admin/timeTrackingSettings/workTimeSettings',
+});
+
+/**
+ * Hub REST API paths.
+ */
+export const hubPath = Object.freeze({
+  OAUTH: 'api/rest/oauth2/auth',
 });
 
 export interface ActivityCursorPage {

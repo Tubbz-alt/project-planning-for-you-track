@@ -38,11 +38,11 @@ function normalizeUrl(baseUrl: string): string {
 }
 
 /**
- * Navigates the current window to the YouTrack OAuth2 page.
+ * Navigates the current window to the Jetbrains Hub OAuth2 page.
  *
- * Once successfully logged in, the YouTrack OAuth2 page will redirect the browser to the given `redirectUrl`. To be
- * able to seamlessly proceed where the user left off, the current application state needs to be preserved. This method
- * stores the given application state `appState` in the
+ * Once successfully logged in, the OAuth2 page will redirect the browser to the given `redirectUrl`. To be able to
+ * seamlessly proceed where the user left off, the current application state needs to be preserved. This method stores
+ * the given application state `appState` in the
  * [session storage](https://developer.mozilla.org/en-US/docs/Web/API/Window/sessionStorage). The rationale is:
  * 1. The application state could be larger than what one would reasonably encode in the redirect URL (which is another
  *    possibility of preserving the state).
@@ -52,8 +52,10 @@ function normalizeUrl(baseUrl: string): string {
  * some [additional information](https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API) on this topic.
  *
  * @typeparam T type of the application state
- * @param baseUrl The YouTrack base URL to which relative paths like `youtrack/api/...` or `hub/api/...` will be
- *     appended. The base URL is expected to and in a slash (/). See {@link YouTrackConfig.baseUrl}.
+ * @param youTrackBaseUrl The YouTrack base URL to which relative paths of form `api/...` will be appended. The base URL
+ *     is expected to end in a slash (/). See {@link httpGet}().
+ * @param hubUrl Hub URL to which a relative path like `api/rest/oauth2/auth` will be appended. The hub URL is expected
+ *     to end in a slash (/). Note that the Hub URL is distinct from the YouTrack base URL.
  * @param serviceId Identification of the particular YouTrack installation. See the
  *     [YouTrack manual](https://www.jetbrains.com/help/youtrack/standalone/OAuth-Authorization.html).
  * @param appState State that will be stored in session storage and later returned by
@@ -63,9 +65,10 @@ function normalizeUrl(baseUrl: string): string {
  *     than necessary to the YouTrack server, the url will be stripped from its hash, username/password, and search
  *     query (if any). If state needs to be preserved, the `appState` argument should be used.
  */
-export function goToOauthPage<T>(baseUrl: string, serviceId: string, appState: T,
+export function goToOauthPage<T>(youTrackBaseUrl: string, hubUrl: string, serviceId: string, appState: T,
     redirectUrl: string = window.location.href): void {
-  const normalizedBaseUrl = normalizeUrl(baseUrl);
+  const normalizedBaseUrl = normalizeUrl(youTrackBaseUrl);
+  const normalizedHubUrl = normalizeUrl(hubUrl);
   const strippedRedirectUrl = new URL(redirectUrl);
   // Create a bare redirect URL, so to not expose more data than necessary
   strippedRedirectUrl.hash = '';
@@ -74,7 +77,7 @@ export function goToOauthPage<T>(baseUrl: string, serviceId: string, appState: T
   strippedRedirectUrl.search = '';
 
   const oAuthId = `${Date.now().toString()}_${Math.floor(Math.random() * 10000)}`;
-  const youTrackOauthUrl = new URL(RestApi.youTrackPath.OAUTH, normalizedBaseUrl);
+  const youTrackOauthUrl = new URL(RestApi.hubPath.OAUTH, normalizedHubUrl);
   Object.entries({
     response_type: 'token',
     state: oAuthId,
@@ -152,8 +155,8 @@ export function handlePotentialOauthRedirect<T>(): T | undefined {
  * This method returns the HTTP Authorization header known due to a previous call to
  * {@link handlePotentialOauthRedirect}(), or undefined if not known for the given URL.
  *
- * @param baseUrl The YouTrack base URL to which relative paths like `youtrack/api/...` or `hub/api/...` will be
- *     appended. The base URL is expected to end in a slash (/). See {@link httpGet}().
+ * @param baseUrl The YouTrack base URL to which relative paths of form `api/...` will be appended. The base URL is
+ *     expected to end in a slash (/). See {@link httpGet}().
  * @return value for HTTP authorization header
  */
 export function authorizationFor(baseUrl: string): string | undefined {

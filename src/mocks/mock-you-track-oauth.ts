@@ -2,6 +2,7 @@ import { goToOauthPage, handlePotentialOauthRedirect } from '../main';
 import MockLocation from './mock-window-location';
 
 export const YOUTRACK_BASE_URL = 'http://youtrack/';
+export const HUB_URL = 'http://hub/';
 
 export default class MockYouTrackOauth {
   private mockLocation: MockLocation = new MockLocation();
@@ -10,7 +11,7 @@ export default class MockYouTrackOauth {
     this.mockLocation.setup();
     const currentURL = new URL('http://localhost/fancy-web-app/');
     const appStateBeforeOauth = 'appState';
-    goToOauthPage(YOUTRACK_BASE_URL, 'service-id', appStateBeforeOauth, currentURL.toString());
+    goToOauthPage(YOUTRACK_BASE_URL, HUB_URL, 'service-id', appStateBeforeOauth, currentURL.toString());
     expect(this.mockLocation.pastHrefChanges.length).toBe(1);
     const oAuthUrl = new URL(this.mockLocation.pastHrefChanges[0]);
     const hashParams = new URLSearchParams();

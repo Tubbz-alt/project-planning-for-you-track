@@ -15,9 +15,9 @@ function isYouTrackError<T>(value: any): value is YouTrackError {
  * immediately.
  *
  * @typeparam T the type of the response by YouTrack (after parsing the JSON)
- * @param baseUrl The YouTrack base URL to which relative paths like `youtrack/api/...` or `hub/api/...` will be
- *     appended. The base URL is expected to end in a slash (/). For an InCloud instance, this is of form
- *     `https://<name>.myjetbrains.com/`.
+ * @param baseUrl The YouTrack base URL to which relative paths of form `api/...` will be appended. The base URL is
+ *     expected to end in a slash (/). For an InCloud instance without a custom domain, this is of form
+ *     `https://<name>.myjetbrains.com/youtrack/`.
  * @param resourcePath relative path to the REST API resource requested
  * @param queryParams parameters that will be added to the query string
  * @return A promise that in case of success will be fulfilled with the retrieved object. In case of any failure, it
