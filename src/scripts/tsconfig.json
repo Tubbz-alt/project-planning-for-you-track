@@ -6,6 +6,7 @@
     // Enable all strict type-checking options.
     "strict": true,
 
+    "sourceMap": true,
     "outDir": "../../target/scripts",
 
     // Allow to import CommonJS modules using the regular syntax (as opposed to "import = require('module')")

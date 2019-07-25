@@ -1,6 +1,7 @@
 import * as ProjectPlanningJs from '@fschopp/project-planning-js';
 import {
-  appendSchedule, Failure,
+  appendSchedule,
+  Failure,
   ProjectPlan,
   SchedulableIssue,
   Schedule,
