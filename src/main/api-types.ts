@@ -52,12 +52,12 @@ export interface IssueActivity {
   assignee: string;
 
   /**
-   * The start timestamp of the activity.
+   * The start timestamp of the activity (including).
    */
   start: number;
 
   /**
-   * The end timestamp of the activity.
+   * The end timestamp of the activity (excluding).
    *
    * If the issue activity has no scheduled end, this property is `Number.MAX_SAFE_INTEGER`.
    */
@@ -66,10 +66,25 @@ export interface IssueActivity {
   /**
    * Whether this activity represents wait time.
    *
-   * If true, this activity does not prevent other issues to be assigned concurrently to the same assignee. However,
-   * any dependent issue can only start once all work on this issue has been finished and the wait time has elapsed.
+   * If true, this activity does not prevent other issues from being assigned concurrently to the same assignee.
+   * However, any dependent issue can only start once all work on this issue has finished and all wait time has elapsed.
    */
   isWaiting: boolean;
+}
+
+/**
+ * An issue activity with one or more assignees.
+ *
+ * See {@link IssueActivity} and {@link groupByIntervalAndWaitStatus}().
+ */
+export interface MultiAssigneeIssueActivity extends Omit<IssueActivity, 'assignee'> {
+  /**
+   * Assignees for this issue activity, during the time interval from {@link IssueActivity.start} to
+   * {@link IssueActivity.end}.
+   *
+   * The same guarantees hold as for {@link IssueActivity.assignee}. Additionally, the array is non-empty.
+   */
+  assignees: string[];
 }
 
 /**
@@ -220,11 +235,6 @@ export type Schedule = ScheduledIssue[];
  * Scheduled activities for an issue with remaining effort or wait time.
  *
  * The same guarantees hold as for {@link YouTrackIssue.issueActivities}.
- *
- * The activities are sorted by {@link IssueActivity.end}. If there are several issue activities with the same end
- * timestamp but different assignees, the order among them is undefined (though deterministic). Issue activities with
- * the same assignee are guaranteed to not overlap. Moreover, if `a` and `b` are two consecutive activities with
- * `a.end === b.start`, then they differ in {@link IssueActivity.isWaiting}.
  */
 export type ScheduledIssue = IssueActivity[];
 
@@ -457,12 +467,16 @@ export interface YouTrackIssue extends Required<SchedulableIssue> {
   /**
    * Issue activities; that is, periods in which the issue is active/scheduled.
    *
-   * The same guarantees hold as for {@link ScheduledIssue}.
-   *
    * The activities are sorted by {@link IssueActivity.end}. If there are several issue activities with the same end
    * timestamp but different assignees, the order among them is undefined (though deterministic). Issue activities with
-   * the same assignee are guaranteed to not overlap. Moreover, if `a` and `b` are two consecutive activities with
+   * the same assignee are guaranteed to not overlap (assuming each activity is a half-closed interval that excludes its
+   * end timestamp). Moreover, if `a` and `b` are two activities with `a.assignee === b.assignee` and
    * `a.end === b.start`, then they differ in {@link IssueActivity.isWaiting}.
+   *
+   * It is guaranteed that activities representing wait time (where {@link IssueActivity.isWaiting} is true) do not
+   * overlap with any other activities.
+   *
+   * Note that {@link groupByIntervalAndWaitStatus}() can be used if activities need to be grouped by interval.
    */
   issueActivities: IssueActivity[];
 

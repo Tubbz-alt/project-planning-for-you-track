@@ -2,6 +2,9 @@ import * as ProjectPlanningJs from '@fschopp/project-planning-js';
 import {
   appendSchedule,
   Failure,
+  groupByIntervalAndWaitStatus,
+  IssueActivity,
+  MultiAssigneeIssueActivity,
   ProjectPlan,
   SchedulableIssue,
   Schedule,
@@ -317,5 +320,82 @@ describe('appendSchedule()', () => {
       warnings: [],
     };
     expect(result).toEqual(expected);
+  });
+});
+
+describe('groupByIntervalAndWaitStatus()', () => {
+  test('handles trivial input', () => {
+    expect(groupByIntervalAndWaitStatus([])).toEqual([]);
+  });
+
+  describe('handles elementary transformations', () => {
+    test.each<[IssueActivity[], MultiAssigneeIssueActivity[]]>([
+      [
+        [{assignee: 'a', start: 0, end: 1, isWaiting: false}, {assignee: 'a', start: 2, end: 3, isWaiting: false}],
+        [
+          {assignees: ['a'], start: 0, end: 1, isWaiting: false},
+          {assignees: ['a'], start: 2, end: 3, isWaiting: false},
+        ],
+      ],
+      [
+        [{assignee: 'a', start: 0, end: 1, isWaiting: false}, {assignee: 'a', start: 1, end: 2, isWaiting: true}],
+        [{assignees: ['a'], start: 0, end: 1, isWaiting: false}, {assignees: ['a'], start: 1, end: 2, isWaiting: true}],
+      ],
+    ])('groupByIntervalAndWaitStatus(%j) === %j', (activities, expected) => {
+      expect(groupByIntervalAndWaitStatus(activities)).toEqual(expected);
+    });
+  });
+
+  describe('handles non-normalized input', () =>  {
+    // Supported even though such an IssueActivity[] would not be returned by any of our API.
+    test.each<[IssueActivity[], MultiAssigneeIssueActivity[]]>([
+      [
+        [{assignee: 'a', start: 0, end: 1, isWaiting: false}, {assignee: 'a', start: 1, end: 2, isWaiting: false}],
+        [{assignees: ['a'], start: 0, end: 2, isWaiting: false}],
+      ],
+      [
+        [{assignee: 'a', start: 0, end: 2, isWaiting: false}, {assignee: 'a', start: 1, end: 3, isWaiting: false}],
+        [{assignees: ['a'], start: 0, end: 3, isWaiting: false}],
+      ],
+    ])('groupByIntervalAndWaitStatus(%j) === %j', (activities, expected) => {
+      expect(groupByIntervalAndWaitStatus(activities)).toEqual(expected);
+    });
+  });
+
+  describe('handles merging multiple users', () => {
+    test.each<[IssueActivity[], MultiAssigneeIssueActivity[]]>([
+      [
+        [{assignee: 'a', start: 0, end: 2, isWaiting: false}, {assignee: 'b', start: 1, end: 3, isWaiting: false}],
+        [
+          {assignees: ['a'], start: 0, end: 1, isWaiting: false},
+          {assignees: ['a', 'b'], start: 1, end: 2, isWaiting: false},
+          {assignees: ['b'], start: 2, end: 3, isWaiting: false},
+        ],
+      ],
+    ])('groupByIntervalAndWaitStatus(%j) === %j', (activities, expected) => {
+      expect(groupByIntervalAndWaitStatus(activities)).toEqual(expected);
+    });
+  });
+
+  describe('groups also by wait status, and returns sorted output', () => {
+    test.each<[IssueActivity[], MultiAssigneeIssueActivity[]]>([
+      [
+        [
+          {assignee: 'b', start: 1, end: 5, isWaiting: true},
+          {assignee: 'c', start: 1, end: 2, isWaiting: false},
+          {assignee: 'a', start: 5, end: 7, isWaiting: false},
+          {assignee: 'c', start: 3, end: 6, isWaiting: false},
+        ],
+        [
+          {assignees: ['c'], start: 1, end: 2, isWaiting: false},
+          {assignees: ['b'], start: 1, end: 5, isWaiting: true},
+          {assignees: ['c'], start: 3, end: 5, isWaiting: false},
+          {assignees: ['a', 'c'], start: 5, end: 6, isWaiting: false},
+          {assignees: ['a'], start: 6, end: 7, isWaiting: false},
+        ],
+      ],
+    ])('groupByIntervalAndWaitStatus(%j) === %j', (activities, expected) => {
+      expect(groupByIntervalAndWaitStatus(activities)).toEqual(expected);
+    });
   });
 });

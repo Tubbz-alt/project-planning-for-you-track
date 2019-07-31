@@ -1,8 +1,10 @@
 import * as ProjectPlanningJs from '@fschopp/project-planning-js';
+import { strict as assert } from 'assert';
 import {
   Contributor,
   Failure,
   IssueActivity,
+  MultiAssigneeIssueActivity,
   ProjectPlan,
   SchedulableIssue,
   Schedule,
@@ -176,6 +178,83 @@ export function appendSchedule(projectPlan: ProjectPlan, schedule: Schedule, div
 }
 
 /**
+ * Returns the given issue activities grouped by interval and wait status.
+ *
+ * Every point in time is represented by at most two {@link MultiAssigneeIssueActivity} elements in the returned array;
+ * one for all assignees that are not waiting, and one for all that are. Each {@link MultiAssigneeIssueActivity} element
+ * has maximum length. In other words, no two {@link MultiAssigneeIssueActivity} elements could be merged into one.
+ *
+ * This function can be thought to work as follows: It first separates the activities according to wait status. Then,
+ * for both groups: It projects all start and end timestamps of the given activities onto a single timeline. It then
+ * iterates over these timestamps, and whenever the set of assignees changes:
+ * 1. The current {@link MultiAssigneeIssueActivity} (if any) is ended.
+ * 2. A new {@link MultiAssigneeIssueActivity} is added if the new set of assignees is non-empty.
+ * As last step, the non-waiting and waiting activities are merged (and sorted).
+ *
+ * Note that all functions in this package that return arrays of {@link IssueActivity} guarantee a “normalized” form.
+ * See, for instance, {@link YouTrackIssue.issueActivities}. With these extra guarantees, no activities in the returned
+ * array ever overlap.
+ *
+ * @param activities The issue activities. The array does not have to be “normalized.”
+ * @return The array of issue activities grouped by interval and wait status. The array will be sorted by the `start`
+ *     and then by the `isWaiting` properties. The {@link MultiAssigneeIssueActivity.assignees} property of each element
+ *     is guaranteed to be sorted, too.
+ */
+export function groupByIntervalAndWaitStatus(activities: IssueActivity[]): MultiAssigneeIssueActivity[] {
+  enum IssueEventType {
+    ADDED = 0,
+    REMOVED = 1,
+  }
+  interface IssueEvent {
+    type: IssueEventType;
+    assignee: string;
+    timestamp: number;
+    isWaiting: boolean;
+  }
+  const result: MultiAssigneeIssueActivity[] = [];
+  for (const isWaiting of [false, true]) {
+    const events: IssueEvent[] = [];
+    for (const activity of filter(activities, (filterActivity) => filterActivity.isWaiting === isWaiting)) {
+      const assignee = activity.assignee;
+      events.push(
+          {type: IssueEventType.ADDED, assignee, timestamp: activity.start, isWaiting},
+          {type: IssueEventType.REMOVED, assignee, timestamp: activity.end, isWaiting}
+      );
+    }
+    events.sort((first, second) => first.timestamp - second.timestamp);
+
+    let lastActivity: MultiAssigneeIssueActivity = {
+      assignees: [],
+      start: Number.MIN_SAFE_INTEGER,
+      end: Number.MAX_SAFE_INTEGER,
+      isWaiting: false,
+    };
+    let lastTimestamp: number = Number.MIN_SAFE_INTEGER;
+    const assigneeToActivityCount = new Map<string, number>();
+    for (const event of events) {
+      if (event.timestamp > lastTimestamp) {
+        lastActivity = timePassed(lastActivity, lastTimestamp, assigneeToActivityCount, result, isWaiting);
+      }
+
+      let assigneeActiveCount: number = coalesce(assigneeToActivityCount.get(event.assignee), 0);
+      if (event.type === IssueEventType.REMOVED) {
+        --assigneeActiveCount;
+      } else {
+        ++assigneeActiveCount;
+      }
+      assert(assigneeActiveCount >= 0, 'count cannot become negative');
+      assigneeToActivityCount.set(event.assignee, assigneeActiveCount);
+      lastTimestamp = event.timestamp;
+    }
+    timePassed(lastActivity, lastTimestamp, assigneeToActivityCount, result, isWaiting);
+  }
+  result.sort((first, second) => first.start === second.start
+      ? (+first.isWaiting) - (+second.isWaiting)
+      : first.start - second.start);
+  return result;
+}
+
+/**
  * Returns a new object with values for the optional properties of {@link SchedulableIssue}.
  */
 function newDefaultSchedulableIssue(): OnlyOptionals<SchedulableIssue> {
@@ -203,3 +282,71 @@ function newDefaultSchedulingOptions(): OnlyOptionals<SchedulingOptions> {
  * The number of minutes per week, in real time.
  */
 const MINUTES_PER_WEEK_REAL_TIME = 7 * 24 * 60;
+
+/**
+ * Commits the last issue activity if the set of assignees changed at the last timestamp.
+ *
+ * This function is called because time progressed from `lastTimestamp` to `x`, so the interval between `lastTimestamp`
+ * and `x` becomes “settled.”
+ *
+ * Note that there are 3 logical timestamps of relevance here:
+ * 1. The timestamp when `lastActivity` started. This is simply `lastActivity.start`.
+ * 2. The timestamp of the last event prior to the current time. This is `lastTimestamp`.
+ * 3. The current time. This function does not need an exact value, so it may be an arbitrary value
+ *    `x > lastTimestamp`.
+ *
+ * @param lastActivity The activity that is known to have lasted (at least) until timestamp `lastTimestamp`. That is,
+ *     `lastActivity.assignees` contains the set of assignees between timestamps `lastActivity.start` and
+ *     `lastTimestamp`.
+ * @param lastTimestamp The timestamp of the last event (prior to the current time `x`). It holds that
+ *     `lastTimestamp < x`. If the set of assignees changed at `lastTimestamp`, then this function updates
+ *     `lastActivity` and adds it to `result` (assuming there was at least one assignee between timestamps
+ *     `lastActivity.start` and `lastTimestamp`).
+ * @param currentAssignees The set of assignees between timestamp `lastTimestamp` and `x`.
+ * @param result The array of activities that `lastActivity` will be added to if the set of assignees changed at
+ *     timestamp `lastTimestamp`.
+ * @param isWaiting If this function returns a new activity (starting at `lastTimestamp`), the value for the
+ *     `isWaiting` property.
+ * @return The current activity that is known to have lasted (at least) until timestamp `x`.
+ */
+function timePassed(lastActivity: MultiAssigneeIssueActivity, lastTimestamp: number,
+    currentAssignees: Map<string, number>, result: MultiAssigneeIssueActivity[], isWaiting: boolean):
+    MultiAssigneeIssueActivity {
+  let assigneesChanged: boolean = false;
+  for (const assignee of lastActivity.assignees) {
+    if (coalesce(currentAssignees.get(assignee), 0) <= 0) {
+      assigneesChanged = true;
+      break;
+    }
+  }
+  const assignees: string[] = [];
+  for (const [assignee, activeCount] of currentAssignees.entries()) {
+    if (activeCount > 0) {
+      assignees.push(assignee);
+    }
+  }
+  assigneesChanged = assigneesChanged || lastActivity.assignees.length !== assignees.length;
+  if (assigneesChanged) {
+    if (lastActivity.assignees.length > 0) {
+      lastActivity.end = lastTimestamp;
+      result.push(lastActivity);
+    }
+    assignees.sort();
+    return {
+      assignees,
+      start: lastTimestamp,
+      end: Number.MAX_SAFE_INTEGER,
+      isWaiting,
+    };
+  } else {
+    return lastActivity;
+  }
+}
+
+function* filter<T>(iterable: Iterable<T>, predicate: (val: T) => boolean): Iterable<T> {
+  for (const value of iterable) {
+    if (predicate(value)) {
+      yield value;
+    }
+  }
+}

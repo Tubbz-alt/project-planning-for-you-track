@@ -1,14 +1,14 @@
 import { extractProperties, FieldsParameters, parseFieldsParameter } from './fields-parameters';
 
-test.each([
+test.each<[string, FieldsParameters]>([
   ['id', {id: {}}],
   ['id,value(isResolved)', {id: {}, value: {isResolved: {}}}],
   ['foo(bar(baz,qux)))', {foo: {bar: {baz: {}, qux: {}}}}],
-] as [string, FieldsParameters][])('parse of fields parameter "%s" succeeds', (expression, expected) => {
+])('parse of fields parameter "%s" succeeds', (expression, expected) => {
   expect(parseFieldsParameter(expression)).toEqual(expected);
 });
 
-test.each([
+test.each<string>([
   'id(',
   ',',
   ')',

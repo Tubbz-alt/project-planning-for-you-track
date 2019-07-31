@@ -1,9 +1,8 @@
 import { assignDefined } from '../main/util';
 
-test.each([
+test.each<[{[key: string]: any}, {[key: string]: any}, {[key: string]: any}]>([
   [{foo: 'bar'}, {foo: undefined}, {foo: 'bar'}],
   [{}, {foo: undefined}, {foo: undefined}],
-] as [{[key: string]: any}, {[key: string]: any}, {[key: string]: any}][])(
-    'assignDefined(%j, %j) === %j', (target, source, expected) => {
+])('assignDefined(%j, %j) === %j', (target, source, expected) => {
   expect(assignDefined(target, source)).toEqual(expected);
 });
