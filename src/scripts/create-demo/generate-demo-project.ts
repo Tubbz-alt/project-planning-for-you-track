@@ -54,11 +54,11 @@ const demoProject: Project = {
         {day: -25, assign: User.ZEPPELIN, state: State.IN_PROGRESS},
       ],
     }, {
-      no: 2, title: 'Propeller thrust model', type: Type.TASK, par: 1, events: [
+      no: 2, title: 'Propeller thrust model', type: Type.TASK, par: 1, rem: 2, events: [
         {day: -30, state: State.OPEN},
         {day: -25, assign: User.GLAUERT},
         {day: -20, state: State.IN_PROGRESS},
-        {day: -5, state: State.DONE},
+        {day: -5, state: State.OPEN},
       ],
     }, {
       no: 3, title: 'Aerodynamics and aerostatics model', type: Type.TASK, par: 1, events: [
@@ -131,12 +131,12 @@ const demoProject: Project = {
     },
 
     { no: 30, title: 'Qualify vendors and sample components', type: Type.EPIC, dep: [20] },
-    { no: 31, title: 'Build test stand for power cables', type: Type.TASK, par: 20, dep: [4], rem: 5 },
-    { no: 32, title: 'Order tailor-made propellers', type: Type.TASK, par: 20, dep: [2], rem: 2, wait: 10 },
-    { no: 33, title: 'Choose brushless DC motors', type: Type.TASK, par: 20, rem: 2, wait: 10 },
-    { no: 34, title: 'Find vendor for fins', type: Type.TASK, par: 20, rem: 2 },
+    { no: 31, title: 'Build test stand for power cables', type: Type.TASK, par: 30, dep: [4], rem: 5 },
+    { no: 32, title: 'Order tailor-made propellers', type: Type.TASK, par: 30, dep: [2], rem: 2, wait: 10 },
+    { no: 33, title: 'Choose brushless DC motors', type: Type.TASK, par: 30, rem: 2, wait: 10 },
+    { no: 34, title: 'Find vendor for fins', type: Type.TASK, par: 30, rem: 2 },
 
-    { no: 40, title: 'Assemble airship prototype', type: Type.EPIC, rem: 20, dep: [30] },
+    { no: 40, title: 'Assemble airship prototype', type: Type.EPIC, rem: 20, dep: [20, 30] },
 
     {
       no: 50, title: 'Flight tests with airship prototype', type: Type.EPIC, dep: [40], rem: 30, events: [
@@ -479,7 +479,7 @@ function requireDefined<T>(value: T | undefined): T {
 
 function datePlusWorkdays(date: Date, workdays: number): Date {
   const newDate = new Date(date.getTime());
-  const numWeeks = Math.floor(workdays / 5);
+  const numWeeks = Math.trunc(workdays / 5);
   const remainingDays = workdays % 5;
   newDate.setDate(newDate.getDate() + (numWeeks * 7) + remainingDays);
   return newDate;

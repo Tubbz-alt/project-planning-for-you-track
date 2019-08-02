@@ -195,6 +195,9 @@ export function appendSchedule(projectPlan: ProjectPlan, schedule: Schedule, div
  * See, for instance, {@link YouTrackIssue.issueActivities}. With these extra guarantees, no activities in the returned
  * array ever overlap.
  *
+ * This function treats activities with empty {@link IssueActivity.assignee} in the same way as all other activities.
+ * That is, within this function, the empty string is a valid assignee name.
+ *
  * @param activities The issue activities. The array does not have to be “normalized.”
  * @return The array of issue activities grouped by interval and wait status. The array will be sorted by the `start`
  *     and then by the `isWaiting` properties. The {@link MultiAssigneeIssueActivity.assignees} property of each element
