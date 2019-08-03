@@ -4,6 +4,7 @@ import {
   Contributor,
   Failure,
   IssueActivity,
+  IssueNode,
   MultiAssigneeIssueActivity,
   ProjectPlan,
   SchedulableIssue,
@@ -11,12 +12,15 @@ import {
   SchedulingOptions,
   YouTrackIssue,
 } from './api-types';
+import { makeForest, traverseIssueForest } from './issue-forest';
 import { assignDefined, coalesce, deepClone, OnlyOptionals } from './util';
 
 /**
  * Computes and returns a schedule for the given issues.
  *
- * @param issues issues that need to be scheduled
+ * @param issues Array of issues that need to be scheduled. The array is expected to be “closed” in the sense that a
+ *     parent or dependency referenced by any of the issues is guaranteed to be contained in `issues`, too. That is,
+ *     despite the name of this function, it is *not* expected that all issue are unresolved.
  * @param options scheduling options
  * @return promise that will be resolved with the schedule or rejected with a {@link Failure} containing a
  *     human-readable failure description if the problem instance is invalid (for example, has a cyclic dependency
@@ -25,63 +29,16 @@ import { assignDefined, coalesce, deepClone, OnlyOptionals } from './util';
 export async function scheduleUnresolved(issues: SchedulableIssue[], options: SchedulingOptions):
     Promise<Schedule> {
   const actualOptions: Required<SchedulingOptions> = assignDefined(newDefaultSchedulingOptions(), options);
-
-  const schedule: IssueActivity[][] = issues.map((ignoredIssue) => []);
-
-  // Invariant: n === machineIdxToContributorIdx.length === schedulingInstance.machineSpeeds.length
-  let n: number = 0;
-  const assigneeToContributorIdx = new Map<string, number>();
-  const machineIdxToContributorIdx: number[] = [];
-  const schedulingInstance: ProjectPlanningJs.SchedulingInstance = {
-    machineSpeeds: [],
-    jobs: [],
-    minFragmentSize: actualOptions.minActivityDuration,
-  };
-  for (let i = 0; i < actualOptions.contributors.length; ++i) {
-    const contributor: Contributor = actualOptions.contributors[i];
-    assigneeToContributorIdx.set(contributor.id, i);
-    const numMembers: number = coalesce(contributor.numMembers, 1);
-    machineIdxToContributorIdx.length = n + numMembers;
-    machineIdxToContributorIdx.fill(i, n, n + numMembers);
-    schedulingInstance.machineSpeeds.length = n + numMembers;
-    schedulingInstance.machineSpeeds.fill(contributor.minutesPerWeek, n, n + numMembers);
-    n += numMembers;
-  }
-  const issueIdToJobIdx = new Map<string, number>();
-  const jobIdxToIssueIdx: number[] = [];
-  for (let j = 0; j < issues.length; ++j) {
-    const issue: SchedulableIssue = issues[j];
-    if (issue.remainingEffortMs > 0 || coalesce(issue.remainingWaitTimeMs, 0) > 0) {
-      issueIdToJobIdx.set(issue.id, jobIdxToIssueIdx.length);
-      jobIdxToIssueIdx.push(j);
-    }
-  }
-  for (const jobIdx of issueIdToJobIdx.values()) {
-    const issue: Required<SchedulableIssue> =
-        assignDefined(newDefaultSchedulableIssue(), issues[jobIdxToIssueIdx[jobIdx]]);
-    const job: ProjectPlanningJs.Job = {
-      size: Math.ceil(issue.remainingEffortMs / actualOptions.resolutionMs) * actualOptions.minutesPerWeek,
-      deliveryTime: Math.ceil(issue.remainingWaitTimeMs / actualOptions.resolutionMs),
-      splitting: issue.splittable
-          ? ProjectPlanningJs.JobSplitting.MULTIPLE_MACHINES
-          : ProjectPlanningJs.JobSplitting.PREEMPTION,
-      dependencies: issue.dependencies
-          .map((depIssueId): number | undefined => issueIdToJobIdx.get(depIssueId))
-          .filter((depJobIdx): depJobIdx is number => depJobIdx !== undefined),
-      preAssignment: issue.assignee.length > 0
-          ? assigneeToContributorIdx.get(issue.assignee)
-          : undefined,
-    };
-    schedulingInstance.jobs.push(job);
-  }
-
+  const {jobIdxToMapping, machineIdxToContributorIdx, schedulingInstance} =
+      makeSchedulingInstance(issues, actualOptions);
   const machineSchedule: ProjectPlanningJs.Schedule = await ProjectPlanningJs.computeScheduleAsync(schedulingInstance);
   const realTimeFactor = MINUTES_PER_WEEK_REAL_TIME / actualOptions.minutesPerWeek;
+  const schedule: IssueActivity[][] = issues.map(() => []);
   const scheduleTimestampToEpochTime = (timestamp: number): number => Math.ceil(
       actualOptions.predictionStartTimeMs + timestamp * actualOptions.resolutionMs * realTimeFactor);
   for (let j = 0; j < machineSchedule.length; ++j) {
     const scheduledJob: ProjectPlanningJs.ScheduledJob = machineSchedule[j];
-    const scheduledIssue: IssueActivity[] = schedule[jobIdxToIssueIdx[j]];
+    const scheduledIssue: IssueActivity[] = schedule[jobIdxToMapping[j].node.index];
     for (const jobFragment of scheduledJob) {
       const issueActivity: IssueActivity = {
         assignee: actualOptions.contributors[machineIdxToContributorIdx[jobFragment.machine]].id,
@@ -192,8 +149,8 @@ export function appendSchedule(projectPlan: ProjectPlan, schedule: Schedule, div
  * As last step, the non-waiting and waiting activities are merged (and sorted).
  *
  * Note that all functions in this package that return arrays of {@link IssueActivity} guarantee a “normalized” form.
- * See, for instance, {@link YouTrackIssue.issueActivities}. With these extra guarantees, no activities in the returned
- * array ever overlap.
+ * See, for instance, {@link YouTrackIssue.issueActivities}. With these extra guarantees, no activities in the array
+ * return by this function ever overlap.
  *
  * This function treats activities with empty {@link IssueActivity.assignee} in the same way as all other activities.
  * That is, within this function, the empty string is a valid assignee name.
@@ -257,12 +214,49 @@ export function groupByIntervalAndWaitStatus(activities: IssueActivity[]): Multi
   return result;
 }
 
+
+/**
+ * Mapping between an issue and (either one or two) jobs in the machine scheduling problem.
+ */
+interface IssueJobMapping {
+  /**
+   * Issue node of the current issue.
+   */
+  node: IssueNode<SchedulableIssue>;
+
+  /**
+   * Index of the “main” scheduling job corresponding to the current issue.
+   *
+   * This job has a size computed from {@link SchedulableIssue.remainingEffortMs}, etc.
+   */
+  jobIdx: number;
+
+  /**
+   * Index of the “associated” job corresponding to the current issue.
+   *
+   * The main job corresponding to any dependent issue must have a dependency on this job index (and not
+   * {@link jobIdx}).
+   *
+   * If the current issue has sub-issues, this will be a dummy job with size 0. It depends on all associated jobs
+   * corresponding to its (direct) sub-issues. Otherwise, if the current issue has no sub-issues, this will be the
+   * same as {@link jobIdx}.
+   */
+  asDependencyJobIdx: number;
+}
+
+
+/**
+ * The number of minutes per week, in real time.
+ */
+const MINUTES_PER_WEEK_REAL_TIME = 7 * 24 * 60;
+
 /**
  * Returns a new object with values for the optional properties of {@link SchedulableIssue}.
  */
 function newDefaultSchedulableIssue(): OnlyOptionals<SchedulableIssue> {
   return {
     remainingWaitTimeMs: 0,
+    parent: '',
     splittable: false,
     dependencies: [],
     assignee: '',
@@ -281,10 +275,79 @@ function newDefaultSchedulingOptions(): OnlyOptionals<SchedulingOptions> {
   };
 }
 
-/**
- * The number of minutes per week, in real time.
- */
-const MINUTES_PER_WEEK_REAL_TIME = 7 * 24 * 60;
+function makeSchedulingInstance(issues: SchedulableIssue[], actualOptions: Required<SchedulingOptions>):
+    {
+      jobIdxToMapping: IssueJobMapping[];
+      machineIdxToContributorIdx: number[];
+      schedulingInstance: ProjectPlanningJs.SchedulingInstance;
+    } {
+  const jobIdxToMapping: IssueJobMapping[] = [];
+  const machineIdxToContributorIdx: number[] = [];
+
+  // Invariant: n === machineIdxToContributorIdx.length === schedulingInstance.machineSpeeds.length
+  let n: number = 0;
+  const assigneeToContributorIdx = new Map<string, number>();
+  const schedulingInstance: ProjectPlanningJs.SchedulingInstance = {
+    machineSpeeds: [],
+    jobs: [],
+    minFragmentSize: actualOptions.minActivityDuration,
+  };
+  for (let i = 0; i < actualOptions.contributors.length; ++i) {
+    const contributor: Contributor = actualOptions.contributors[i];
+    assigneeToContributorIdx.set(contributor.id, i);
+    const numMembers: number = coalesce(contributor.numMembers, 1);
+    machineIdxToContributorIdx.length = n + numMembers;
+    machineIdxToContributorIdx.fill(i, n, n + numMembers);
+    schedulingInstance.machineSpeeds.length = n + numMembers;
+    schedulingInstance.machineSpeeds.fill(contributor.minutesPerWeek, n, n + numMembers);
+    n += numMembers;
+  }
+
+  // We need to make 2 passes over the issue. In the first pass, we setup the mapping between issues and scheduling
+  // jobs. (Some issues may be represented by 2 scheduling jobs.)
+  const issueIdToMapping = new Map<string, IssueJobMapping>();
+  traverseIssueForest(makeForest(issues), (node) => {
+    const jobIdx = jobIdxToMapping.length;
+    const mapping: IssueJobMapping = {
+      node,
+      jobIdx,
+      asDependencyJobIdx: jobIdx,
+    };
+    issueIdToMapping.set(node.issue.id, mapping);
+    jobIdxToMapping.push(mapping);
+    if (node.children.length > 0) {
+      jobIdxToMapping.push(mapping);
+      ++mapping.asDependencyJobIdx;
+    }
+  });
+
+  // In the second pass, create the jobs and set the job dependencies (the indices were not yet available during the
+  // first pass).
+  for (const mapping of issueIdToMapping.values()) {
+    const issue: Required<SchedulableIssue> = assignDefined(newDefaultSchedulableIssue(), mapping.node.issue);
+    const job: ProjectPlanningJs.Job = {
+      size: Math.ceil(issue.remainingEffortMs / actualOptions.resolutionMs) * actualOptions.minutesPerWeek,
+      deliveryTime: Math.ceil(issue.remainingWaitTimeMs / actualOptions.resolutionMs),
+      splitting: issue.splittable
+          ? ProjectPlanningJs.JobSplitting.MULTIPLE_MACHINES
+          : ProjectPlanningJs.JobSplitting.PREEMPTION,
+      dependencies: issue.dependencies.map((depIssueId) => issueIdToMapping.get(depIssueId)!.asDependencyJobIdx),
+      preAssignment: issue.assignee.length > 0
+          ? assigneeToContributorIdx.get(issue.assignee)
+          : undefined,
+    };
+    schedulingInstance.jobs.push(job);
+    if (mapping.asDependencyJobIdx !== mapping.jobIdx) {
+      const dummyJob: ProjectPlanningJs.Job = {
+        size: 0,
+        dependencies: mapping.node.children.map((node) => issueIdToMapping.get(node.issue.id)!.asDependencyJobIdx),
+      };
+      schedulingInstance.jobs.push(dummyJob);
+    }
+  }
+
+  return {jobIdxToMapping, machineIdxToContributorIdx, schedulingInstance};
+}
 
 /**
  * Commits the last issue activity if the set of assignees changed at the last timestamp.

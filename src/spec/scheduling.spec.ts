@@ -46,6 +46,14 @@ describe('scheduleUnresolved()', () => {
     global.Date.now = originalDateNow;
   });
 
+  function realTimeFromEffort(effortMs: number, resolutionMs: number, regularWorkWeekMin: number,
+      availabilityPerWeekMin: number): number {
+    return Math.ceil(
+        Math.ceil(effortMs * (regularWorkWeekMin / availabilityPerWeekMin) / resolutionMs) * resolutionMs *
+            MINUTES_PER_WEEK / regularWorkWeekMin
+    );
+  }
+
   test('computes schedule and coverts from work time to real time', async () => {
     const issues: SchedulableIssue[] = [{
       id: 'issue-1',
@@ -113,7 +121,7 @@ describe('scheduleUnresolved()', () => {
     expect(schedule).toEqual(expected);
   });
 
-  test('handles zero remaining effort', async () => {
+  test('handles zero remaining effort and default prediction start time', async () => {
     const issues: SchedulableIssue[] = [{
       id: 'issue-1',
       remainingEffortMs: 0,
@@ -123,42 +131,122 @@ describe('scheduleUnresolved()', () => {
       remainingEffortMs: 0,
       remainingWaitTimeMs: 50,
     }];
+    const resolutionMs = 3_600_000;
+    const minutesPerWeek = 100;
     const options: SchedulingOptions = {
       contributors: [{
         id: 'cont-1',
         minutesPerWeek: 10,
       }],
-      minutesPerWeek: 100,
+      resolutionMs,
+      minutesPerWeek,
     };
     const startTime = 1234;
     const expected: Schedule = [[], [{
       assignee: 'cont-1',
       start: startTime,
-      end: startTime + 3600000 * (MINUTES_PER_WEEK / options.minutesPerWeek!),
+      end: startTime + resolutionMs * (MINUTES_PER_WEEK / minutesPerWeek),
       isWaiting: true,
     }]];
     Date.now = jest.fn().mockReturnValueOnce(startTime);
     const schedule = await scheduleUnresolved(issues, options);
     await expect(schedule).toEqual(expected);
   });
+
+  test('handles dependencies on issue with sub-issues', async () => {
+    const issues: SchedulableIssue[] = [{
+      id: 'task-2',
+      remainingEffortMs: 5,
+      dependencies: ['epic-1'],
+      assignee: 'cont-2',
+    }, {
+      id: 'task-1-1',
+      remainingEffortMs: 11,
+      parent: 'epic-1',
+      assignee: 'cont-1',
+    }, {
+      id: 'task-1-2',
+      remainingEffortMs: 3,
+      parent: 'epic-1',
+    }, {
+      id: 'epic-1',
+      remainingEffortMs: 0,
+    }, {
+      id: 'task-1-2-1',
+      remainingEffortMs: 7,
+      parent: 'task-1-2',
+      assignee: 'cont-1',
+    }];
+    const minutesPerWeek = 10;
+    const resolutionMs = 1;
+    const predictionStartTimeMs = 123;
+    const options: SchedulingOptions = {
+      contributors: [{
+        id: 'cont-1',
+        minutesPerWeek: 10,
+      }, {
+        id: 'cont-2',
+        minutesPerWeek: 20,
+      }],
+      minutesPerWeek,
+      resolutionMs,
+      predictionStartTimeMs,
+    };
+    const realTimeFromContEffort = (effortMs: number, contIdx: number) =>
+        realTimeFromEffort(effortMs, resolutionMs, minutesPerWeek, options.contributors[contIdx].minutesPerWeek);
+    const expected: Schedule = issues.map(() => []);
+    // task-1-1
+    expected[1] = [{
+      assignee: 'cont-1',
+      start: predictionStartTimeMs,
+      end: predictionStartTimeMs + realTimeFromContEffort(11, 0),
+      isWaiting: false,
+    }];
+    // task-1-2
+    expected[2] = [{
+      assignee: 'cont-2',
+      start: predictionStartTimeMs,
+      end: predictionStartTimeMs + realTimeFromContEffort(3, 1),
+      isWaiting: false,
+    }];
+    // epic-1
+    // Empty!
+    // task-1-2-1
+    expected[4] = [{
+      assignee: 'cont-1',
+      start: expected[1][0].end,
+      end: expected[1][0].end + realTimeFromContEffort(7, 0),
+      isWaiting: false,
+    }];
+    // task-2
+    expect(expected[4][0].end).toBeGreaterThan(expected[2][0].end);
+    expected[0] = [{
+      assignee: 'cont-2',
+      start: expected[4][0].end,
+      end: expected[4][0].end + realTimeFromContEffort(5, 1),
+      isWaiting: false,
+    }];
+    const schedule = await scheduleUnresolved(issues, options);
+    await expect(schedule).toEqual(expected);
+  });
 });
 
-function newIssueDefaults() {
-  return {
-    summary: '',
-    state: 'in-progress',
-    resolved: 0,
-    assignee: '',
-    parent: '',
-    customFields: {},
-    remainingEffortMs: 1000,
-    remainingWaitTimeMs: 500,
-    splittable: true,
-    dependencies: [],
-  };
-}
-
 describe('appendSchedule()', () => {
+  function newIssueDefaults() {
+    return {
+      summary: '',
+      state: 'in-progress',
+      resolved: 0,
+      assignee: '',
+      parent: '',
+      customFields: {},
+      remainingEffortMs: 1000,
+      remainingWaitTimeMs: 500,
+      splittable: true,
+      dependencies: [],
+    };
+  }
+
   test('rejects different number of issues', () => {
     const projectPlan: ProjectPlan = {
       issues: [],

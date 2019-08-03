@@ -38,6 +38,7 @@
     // are not meant to be exported (with option "excludeExternals").
     "src/main/api-types.ts",
     "src/main/index.ts",
+    "src/main/issue-forest.ts",
     "src/main/scheduling.ts",
     "src/main/you-track-http.ts",
     "src/main/you-track-project-planning.ts",

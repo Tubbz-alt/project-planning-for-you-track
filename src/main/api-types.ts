@@ -73,6 +73,48 @@ export interface IssueActivity {
 }
 
 /**
+ * Node in an issue tree (or forest).
+ *
+ * In an issue tree (or forest), there is a one-to-one correspondence between {@link SchedulableIssue} objects and
+ * {@link IssueNode} objects. Parent-child and dependency relationships are “lifted” to {@link IssueNode}. That is, the
+ * dependencies of an {@link IssueNode} `a` are just those nodes that correspond to the issues referenced by
+ * `a.issue.dependencies`.
+ *
+ * See also {@link makeForest}().
+ */
+export interface IssueNode<T extends SchedulableIssue> {
+  /**
+   * Index of {@link issue} in the underlying (flat) array that was used to create this tree.
+   */
+  index: number;
+
+  /**
+   * The issue corresponding to the current node.
+   */
+  issue: T;
+
+  /**
+   * The parent of the the current issue node, or `undefined` if this node is a root node.
+   */
+  parent?: IssueNode<T>;
+
+  /**
+   * Children of the current issue node.
+   */
+  children: IssueNode<T>[];
+
+  /**
+   * Dependencies of the current issue node.
+   */
+  dependencies: IssueNode<T>[];
+
+  /**
+   * Dependents of the current issue node.
+   */
+  dependents: IssueNode<T>[];
+}
+
+/**
  * An issue activity with one or more assignees.
  *
  * See {@link IssueActivity} and {@link groupByIntervalAndWaitStatus}().
@@ -167,7 +209,7 @@ export interface RetrieveProjectPlanOptions {
 }
 
 /**
- * An issue with remaining effort or wait time.
+ * An issue that can be scheduled.
  *
  * This interface contains all issue information relevant to its (future) scheduling.
  */
@@ -202,6 +244,13 @@ export interface SchedulableIssue {
    * By default, there is no remaining wait time; that is, this property is 0.
    */
   remainingWaitTimeMs?: number;
+
+  /**
+   * Issue identifier (see {@link id}) of the parent issue.
+   *
+   * By default, the issue has no parent; that is, this property is the empty string.
+   */
+  parent?: string;
 
   /**
    * Whether this issue can be split across more than one person.
@@ -494,11 +543,6 @@ export interface YouTrackIssue extends Required<SchedulableIssue> {
    * empty string if the state field is not set.
    */
   state: string;
-
-  /**
-   * Issue identifier (see {@link id}) of the parent issue, if any, or empty string if the issue has no parent.
-   */
-  parent: string;
 
   /**
    * Dictionary of custom field values.
