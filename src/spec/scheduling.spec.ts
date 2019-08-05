@@ -153,12 +153,59 @@ describe('scheduleUnresolved()', () => {
     await expect(schedule).toEqual(expected);
   });
 
+  test('honors order of issues independently of issue tree', async () => {
+    const issues: SchedulableIssue[] = [{
+      id: 'task-2',
+      remainingEffortMs: 3,
+      parent: 'epic-1',
+    }, {
+      id: 'epic-1',
+      remainingEffortMs: 2,
+    }];
+    const minutesPerWeek = 10;
+    const resolutionMs = 1;
+    const options: SchedulingOptions = {
+      contributors: [{
+        id: 'cont-1',
+        minutesPerWeek: 10,
+      }],
+      minutesPerWeek,
+      resolutionMs,
+      predictionStartTimeMs: 0,
+    };
+    const expected: Schedule = issues.map(() => []);
+    // task-2
+    expected[0] = [{
+      assignee: 'cont-1',
+      start: 0,
+      end: realTimeFromEffort(issues[0].remainingEffortMs, resolutionMs, minutesPerWeek,
+          options.contributors[0].minutesPerWeek),
+      isWaiting: false,
+    }];
+    // epic-1
+    expected[1] = [{
+      assignee: 'cont-1',
+      start: expected[0][0].end,
+      end: expected[0][0].end +
+          realTimeFromEffort(issues[1].remainingEffortMs, resolutionMs, minutesPerWeek,
+              options.contributors[0].minutesPerWeek),
+      isWaiting: false,
+    }];
+    const schedule = await scheduleUnresolved(issues, options);
+    await expect(schedule).toEqual(expected);
+  });
+
   test('handles dependencies on issue with sub-issues', async () => {
     const issues: SchedulableIssue[] = [{
       id: 'task-2',
       remainingEffortMs: 5,
       dependencies: ['epic-1'],
       assignee: 'cont-2',
+    }, {
+      id: 'task-1-2-1',
+      remainingEffortMs: 7,
+      parent: 'task-1-2',
+      assignee: 'cont-1',
     }, {
       id: 'task-1-1',
       remainingEffortMs: 11,
@@ -170,11 +217,7 @@ describe('scheduleUnresolved()', () => {
       parent: 'epic-1',
     }, {
       id: 'epic-1',
-      remainingEffortMs: 0,
-    }, {
-      id: 'task-1-2-1',
-      remainingEffortMs: 7,
-      parent: 'task-1-2',
+      remainingEffortMs: 13,
       assignee: 'cont-1',
     }];
     const minutesPerWeek = 10;
@@ -195,27 +238,32 @@ describe('scheduleUnresolved()', () => {
     const realTimeFromContEffort = (effortMs: number, contIdx: number) =>
         realTimeFromEffort(effortMs, resolutionMs, minutesPerWeek, options.contributors[contIdx].minutesPerWeek);
     const expected: Schedule = issues.map(() => []);
-    // task-1-1
+    // task-1-2-1
     expected[1] = [{
       assignee: 'cont-1',
       start: predictionStartTimeMs,
-      end: predictionStartTimeMs + realTimeFromContEffort(11, 0),
+      end: predictionStartTimeMs + realTimeFromContEffort(7, 0),
+      isWaiting: false,
+    }];
+    // task-1-1
+    expected[2] = [{
+      assignee: 'cont-1',
+      start: expected[1][0].end,
+      end: expected[1][0].end + realTimeFromContEffort(11, 0),
       isWaiting: false,
     }];
     // task-1-2
-    expected[2] = [{
+    expected[3] = [{
       assignee: 'cont-2',
       start: predictionStartTimeMs,
       end: predictionStartTimeMs + realTimeFromContEffort(3, 1),
       isWaiting: false,
     }];
     // epic-1
-    // Empty!
-    // task-1-2-1
     expected[4] = [{
       assignee: 'cont-1',
-      start: expected[1][0].end,
-      end: expected[1][0].end + realTimeFromContEffort(7, 0),
+      start: expected[2][0].end,
+      end: expected[2][0].end + realTimeFromContEffort(13, 0),
       isWaiting: false,
     }];
     // task-2
