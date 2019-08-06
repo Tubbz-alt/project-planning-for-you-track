@@ -54,7 +54,7 @@ describe('scheduleUnresolved()', () => {
     );
   }
 
-  test('computes schedule and coverts from work time to real time', async () => {
+  test('computes schedule and converts from work time to real time', async () => {
     const issues: SchedulableIssue[] = [{
       id: 'issue-1',
       remainingEffortMs: 91,
@@ -219,6 +219,10 @@ describe('scheduleUnresolved()', () => {
       id: 'epic-1',
       remainingEffortMs: 13,
       assignee: 'cont-1',
+    }, {
+      id: 'task-3',
+      remainingEffortMs: 199,
+      assignee: 'cont-2',
     }];
     const minutesPerWeek = 10;
     const resolutionMs = 1;
@@ -234,6 +238,8 @@ describe('scheduleUnresolved()', () => {
       minutesPerWeek,
       resolutionMs,
       predictionStartTimeMs,
+      // Chosen such that there is no preemption.
+      minActivityDuration: 200,
     };
     const realTimeFromContEffort = (effortMs: number, contIdx: number) =>
         realTimeFromEffort(effortMs, resolutionMs, minutesPerWeek, options.contributors[contIdx].minutesPerWeek);
@@ -274,8 +280,99 @@ describe('scheduleUnresolved()', () => {
       end: expected[4][0].end + realTimeFromContEffort(5, 1),
       isWaiting: false,
     }];
+    // task-3. Note that it must be scheduled after task-2.
+    expected[5] = [{
+      assignee: 'cont-2',
+      start: expected[0][0].end,
+      end: expected[0][0].end + realTimeFromContEffort(199, 1),
+      isWaiting: false,
+    }];
     const schedule = await scheduleUnresolved(issues, options);
     await expect(schedule).toEqual(expected);
+  });
+
+  test('handles dependencies by issues with sub-issues', async () => {
+    const issues: SchedulableIssue[] = [{
+      id: 'task-1-1',
+      remainingEffortMs: 11,
+      parent: 'epic-1',
+    }, {
+      id: 'epic-1',
+      remainingEffortMs: 0,
+      dependencies: ['task-1'],
+    }, {
+      id: 'task-1',
+      remainingEffortMs: 7,
+    }];
+    const minutesPerWeek = 10;
+    const resolutionMs = 1;
+    const options: SchedulingOptions = {
+      contributors: [{
+        id: 'cont-1',
+        minutesPerWeek: 10,
+      }],
+      minutesPerWeek,
+      resolutionMs,
+      predictionStartTimeMs: 0,
+    };
+    const expected: Schedule = issues.map(() => []);
+    // task-1
+    expected[2] = [{
+      assignee: 'cont-1',
+      start: 0,
+      end: realTimeFromEffort(7, resolutionMs, minutesPerWeek, options.contributors[0].minutesPerWeek),
+      isWaiting: false,
+    }];
+    // task-1-1
+    expected[0] = [{
+      assignee: 'cont-1',
+      start: expected[2][0].end,
+      end: expected[2][0].end +
+          realTimeFromEffort(11, resolutionMs, minutesPerWeek, options.contributors[0].minutesPerWeek),
+      isWaiting: false,
+    }];
+    // epic-1
+    expected[1] = [];
+    const schedule = await scheduleUnresolved(issues, options);
+    await expect(schedule).toEqual(expected);
+  });
+
+  test.each<[number, boolean]>([
+    [60, true],
+    [61, false],
+  ])('handles minActivityDuration (minActivityDuration = %d, expectPreemption = %p)',
+      async (minActivityDuration, expectPreemption) => {
+    // minActivityDuration is given in minutes, because the resolution is 1 minute.
+    const issues: SchedulableIssue[] = [{
+      id: 'task-1',
+      remainingEffortMs: 3_600_000,
+      assignee: 'cont-1',
+    }, {
+      id: 'task-2',
+      remainingEffortMs: 3_600_000,
+      assignee: 'cont-2',
+      dependencies: ['task-1'],
+    }, {
+      id: 'task-3',
+      remainingEffortMs: 7_200_000,
+      assignee: 'cont-2',
+    }];
+    const options: SchedulingOptions = {
+      contributors: [{
+        id: 'cont-1',
+        minutesPerWeek: 60,
+      }, {
+        id: 'cont-2',
+        minutesPerWeek: 60,
+      }],
+      minutesPerWeek: 60,
+      // Resolution is 1 minute.
+      resolutionMs: 60_000,
+      minActivityDuration,
+      predictionStartTimeMs: 0,
+    };
+    const schedule = await scheduleUnresolved(issues, options);
+    await expect(schedule[2].length).toEqual(expectPreemption ? 2 : 1);
   });
 });
 

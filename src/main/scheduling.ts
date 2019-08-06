@@ -13,7 +13,7 @@ import {
   YouTrackIssue,
 } from './api-types';
 import { makeForest, traverseIssueForest } from './issue-forest';
-import { assignDefined, coalesce, deepClone, OnlyOptionals } from './util';
+import { assignDefined, coalesce, deepClone, OnlyOptionals, unreachableCase } from './util';
 
 /**
  * Computes and returns a schedule for the given issues.
@@ -23,9 +23,14 @@ import { assignDefined, coalesce, deepClone, OnlyOptionals } from './util';
  * [fschopp/project-planning-js](https://github.com/fschopp/project-planning-js).
  *
  * Issues are scheduled in input order, subject to issue dependencies. Note that if an issue A depends on another
- * issue B, then A also depends on all of B’s sub-issues. Beyond that, parent-child relationships do *not* influence the
- * scheduling order. That is, if both an issue and its sub-issue have non-zero remaining effort, then both issues’ *own*
- * (excluding sub-issues) processing will occur in input order.
+ * issue B, then both A *and* its sub-issues (transitively) depend on both B and all of B’s sub-issues. Beyond that,
+ * parent-child relationships do *not* influence the scheduling order. That is, if both an issue and a sub-issues have
+ * non-zero remaining effort, then both issues’ *own* (excluding sub-issues) processing will occur in input order.
+ *
+ * Under the hood, this function introduces “dummy” jobs with size zero and zero delivery time. These dummy jobs
+ * (thanks to the transitive nature of dependencies) allow to “factor out” start-to-start and finish-to-finish
+ * dependencies (from issues to sub-issues and vice versa, respectively). Thus, the transformed machine-scheduling
+ * problem instance can be represented succinctly.
  *
  * @param issues Array of issues that need to be scheduled. The array is expected to be “closed” in the sense that a
  *     parent or dependency referenced by any of the issues is guaranteed to be contained in `issues`, too. That is,
@@ -233,30 +238,57 @@ interface ExtendedIssue extends Required<SchedulableIssue> {
   issueIdx: number;
 
   /**
-   * Index of the “main” scheduling job corresponding to the current issue.
+   * Index of the “main” (machine-scheduling) job corresponding to the current issue.
    *
    * This job has a size computed from {@link SchedulableIssue.remainingEffortMs}, etc.
    */
   jobIdx: number;
 
   /**
-   * Index of the “associated” job corresponding to the current issue.
+   * Index of the “dummy” (machine-scheduling) job that the main job and all jobs corresponding to direct sub-issues of
+   * the current issue depend on.
    *
-   * The main job corresponding to any dependent issue must have a dependency on this job index (and not
-   * {@link jobIdx}).
+   * This dummy job (with size zero and zero delivery time) ensures a start-to-start dependency from the current issue
+   * to its sub-issues. It is this job that depends on the jobs corresponding to dependencies of the current issue.
    *
-   * If the current issue has sub-issues, this will be a dummy job with size 0. It depends on all associated jobs
-   * corresponding to its (direct) sub-issues. Otherwise, if the current issue has no sub-issues, this will be the
-   * same as {@link jobIdx}.
+   * If the current issue has no sub-issues, this will be the same as {@link jobIdx}.
+   */
+  startToStartDummyJobIdx: number;
+
+  /**
+   * Index of the “dummy” (machine-scheduling) job that depends on the main job and all jobs corresponding to direct
+   * sub-issues of the current issue.
+   *
+   * This dummy job (with size zero and zero delivery time) ensures a finish-to-finish dependency from the current
+   * issue’s sub-issues to itself. It is this job that the jobs corresponding to dependents of the current issue depend
+   * on.
+   *
+   * If the current issue has no sub-issues, this will be the same as {@link jobIdx}.
    */
   asDependencyJobIdx: number;
 }
+
+/**
+ * The kind of a machine-scheduling job created for an issue.
+ */
+enum JobType {
+  MAIN,
+  START_TO_START,
+  FINISH_TO_FINISH,
+}
+
+/**
+ * A job descriptor that will be converted into a `Job`.
+ */
+type JobDescriptor = [IssueNode<ExtendedIssue>, JobType];
 
 
 /**
  * The number of minutes per week, in real time.
  */
-const MINUTES_PER_WEEK_REAL_TIME = 7 * 24 * 60;
+const MINUTES_PER_WEEK_REAL_TIME: number = 7 * 24 * 60;
+
+const NO_INDEX: number = -1;
 
 /**
  * Returns a new object with values for the optional properties of {@link SchedulableIssue}.
@@ -286,6 +318,10 @@ function newDefaultSchedulingOptions(): OnlyOptionals<SchedulingOptions> {
 /**
  * Returns a machine-scheduling problem instance for the given issues, thereby “reducing” the problem to a another one
  * for that a solver already exists.
+ *
+ * For every parent issue P, this function creates two dummy jobs with size zero and zero delivery time:
+ * 1. A job that depends on all direct sub-issues.
+ * 2. A job that all direct sub-issues depend on.
  */
 function makeSchedulingInstance(issues: SchedulableIssue[], actualOptions: Required<SchedulingOptions>):
     {
@@ -302,7 +338,7 @@ function makeSchedulingInstance(issues: SchedulableIssue[], actualOptions: Requi
   const schedulingInstance: ProjectPlanningJs.SchedulingInstance = {
     machineSpeeds: [],
     jobs: [],
-    minFragmentSize: actualOptions.minActivityDuration,
+    minFragmentSize: actualOptions.minActivityDuration * actualOptions.minutesPerWeek,
   };
   for (let i = 0; i < actualOptions.contributors.length; ++i) {
     const contributor: Contributor = actualOptions.contributors[i];
@@ -315,62 +351,102 @@ function makeSchedulingInstance(issues: SchedulableIssue[], actualOptions: Requi
     n += numMembers;
   }
 
-  // First pass over issues: Fill in issues with defaults, and create bi-direcitonal mapping with job indices.
-  const extendedIssues: ExtendedIssue[] = issues.map((issue, issueIdx) => {
-    const jobIdx = jobIdxToExtendedIssue.length;
-    const extendedIssue: ExtendedIssue = {
-      ...assignDefined(newDefaultSchedulableIssue(), issue),
-      issueIdx,
-      jobIdx,
-      asDependencyJobIdx: jobIdx,
-    };
-    jobIdxToExtendedIssue.push(extendedIssue);
-    return extendedIssue;
-  });
-  const nodesWithDummyJobs: IssueNode<ExtendedIssue>[] = [];
+  // From the intermediate representation as job descriptors, create the actual machine-scheduling jobs. This cannot be
+  // done directly (without the job descriptors), because dependency information is required.
+  for (const [node, jobType] of makeJobDescriptors(issues)) {
+    let job: ProjectPlanningJs.Job;
+    const issue: ExtendedIssue = node.issue;
+    const size: number = 0;
+    const dependencies: number[] = node.parent !== undefined
+        ? [node.parent.issue.startToStartDummyJobIdx]
+        : [];
+    switch (jobType) {
+      case JobType.START_TO_START:
+        dependencies.push(...node.dependencies.map((dependencyNode) => dependencyNode.issue.asDependencyJobIdx));
+        job = {size, dependencies};
+        break;
+      case JobType.FINISH_TO_FINISH:
+        job = {
+          size,
+          dependencies: node.children
+              .map((childNode) => childNode.issue.asDependencyJobIdx)
+              .concat(node.issue.jobIdx),
+        };
+        break;
+      case JobType.MAIN:
+        if (node.children.length === 0) {
+          // There is no start-to-start job for this issue.
+          dependencies.push(...node.dependencies.map((dependencyNode) => dependencyNode.issue.asDependencyJobIdx));
+        }
+        job = {
+          size: Math.ceil(issue.remainingEffortMs / actualOptions.resolutionMs) * actualOptions.minutesPerWeek,
+          deliveryTime: Math.ceil(issue.remainingWaitTimeMs / actualOptions.resolutionMs),
+          splitting: issue.splittable
+              ? ProjectPlanningJs.JobSplitting.MULTIPLE_MACHINES
+              : ProjectPlanningJs.JobSplitting.PREEMPTION,
+          dependencies,
+          preAssignment: issue.assignee.length > 0
+              ? assigneeToContributorIdx.get(issue.assignee)
+              : undefined,
+        };
+        break;
+      /* istanbul ignore next */
+      default: return unreachableCase(jobType);
+    }
+    jobIdxToExtendedIssue.push(node.issue);
+    schedulingInstance.jobs.push(job);
+  }
+  return {jobIdxToExtendedIssue, machineIdxToContributorIdx, schedulingInstance};
+}
+
+function makeJobDescriptors(issues: SchedulableIssue[]): JobDescriptor[] {
+  // 1. Augment the given issues with extra information (some of which we'll have to fill in later).
+  const extendedIssues: ExtendedIssue[] = issues.map((issue, issueIdx) => ({
+    ...assignDefined(newDefaultSchedulableIssue(), issue),
+    issueIdx,
+    // The job indices will be updated later!
+    jobIdx: NO_INDEX,
+    startToStartDummyJobIdx: NO_INDEX,
+    asDependencyJobIdx: NO_INDEX,
+  }));
   const nodes: IssueNode<ExtendedIssue>[] = [];
   nodes.length = extendedIssues.length;
-  // Seconds pass over issues: Build tree and add mappings for "dummy" jobs.
+  const jobDescriptors: JobDescriptor[] = [];
+
+  // 2. Build tree. Also, for each issue, create 1 (if the issue has no sub-issues) or 3 (otherwise) machine-scheduling
+  // jobs. Note that the dummy jobs come first, because they need higher priority than all the main jobs. The reason is
+  // that no otherwise ready main job should ever wait for a dummy job.
   traverseIssueForest(makeForest(extendedIssues), (node) => {
     nodes[node.index] = node;
-
     if (node.children.length > 0) {
-      node.issue.asDependencyJobIdx = jobIdxToExtendedIssue.length;
-      jobIdxToExtendedIssue.push(node.issue);
-      nodesWithDummyJobs.push(node);
+      jobDescriptors.push([node, JobType.START_TO_START], [node, JobType.FINISH_TO_FINISH]);
     }
   });
   // reduce() does *not* call callbackfn for empty slots, so the assert is reasonable:
   // https://www.ecma-international.org/ecma-262/5.1/#sec-15.4.4.21
   assert(nodes.reduce((count) => count + 1, 0) === extendedIssues.length, 'Traversal must have visited all issues');
-
-  // Third path: Finally create the jobs for the machine-scheduling problem.
-  for (let i = 0; i < extendedIssues.length; ++i) {
-    const issue: ExtendedIssue = extendedIssues[i];
-    const node: IssueNode<ExtendedIssue> = nodes[i];
-    assert(node.issue === issue && node.index === issue.issueIdx);
-
-    schedulingInstance.jobs.push({
-      size: Math.ceil(issue.remainingEffortMs / actualOptions.resolutionMs) * actualOptions.minutesPerWeek,
-      deliveryTime: Math.ceil(issue.remainingWaitTimeMs / actualOptions.resolutionMs),
-      splitting: issue.splittable
-          ? ProjectPlanningJs.JobSplitting.MULTIPLE_MACHINES
-          : ProjectPlanningJs.JobSplitting.PREEMPTION,
-      dependencies: node.dependencies.map((dependencyNode) => dependencyNode.issue.asDependencyJobIdx),
-      preAssignment: issue.assignee.length > 0
-          ? assigneeToContributorIdx.get(issue.assignee)
-          : undefined,
-    });
+  for (const node of nodes) {
+    const issue: ExtendedIssue = node.issue;
+    // Initialize the jobs indices. The dummy job indices may be updated again below.
+    issue.startToStartDummyJobIdx = issue.asDependencyJobIdx = issue.jobIdx = jobDescriptors.length;
+    jobDescriptors.push([node, JobType.MAIN]);
   }
-  for (const node of nodesWithDummyJobs) {
-    schedulingInstance.jobs.push({
-      size: 0,
-      dependencies: node.children
-          .map((childNode) => childNode.issue.asDependencyJobIdx)
-          .concat(node.issue.jobIdx),
-    });
+
+  // 3. Now that we know what machine-scheduling jobs will be created (and what issue each corresponds to), complete the
+  // reverse mapping from issue to job indices.
+  outer: for (let i = 0; i < jobDescriptors.length; ++i) {
+    const [node, jobType] = jobDescriptors[i];
+    const issue: ExtendedIssue = node.issue;
+    switch (jobType) {
+      case JobType.START_TO_START: issue.startToStartDummyJobIdx = i; break;
+      case JobType.FINISH_TO_FINISH: issue.asDependencyJobIdx = i; break;
+      case JobType.MAIN: break outer;
+      /* istanbul ignore next */
+      default: return unreachableCase(jobType);
+    }
   }
-  return {jobIdxToExtendedIssue, machineIdxToContributorIdx, schedulingInstance};
+
+  return jobDescriptors;
 }
 
 /**
