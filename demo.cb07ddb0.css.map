@@ -1,0 +1,1 @@
+{"version":3,"sources":["demo.css"],"names":[],"mappings":"AAAA,wBACE,gBAAiB,CACjB,eACF,CAEA,UACE,wBACF","file":"demo.cb07ddb0.css","sourceRoot":"../../src/demo","sourcesContent":[".youtrack-metadata-list {\n  max-height: 20rem;\n  overflow-y: auto;\n}\n\n.readonly {\n  background-color: #e9ecef;\n}\n"]}
